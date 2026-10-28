@@ -264,8 +264,9 @@ void SftpRemotePart(const char* userPart, char* out, int outSize)
 }
 
 // Parses the "//[user@]host[:port]" prefix of an address-bar path. Port defaults to 22 when absent
-// or empty. Returns false (caller must not switch server) if there is no host or the port is not
-// a number in 1..65535.
+// or empty. An IPv6 literal is written "[addr]" / "[addr]:port" and returned without the brackets.
+// Returns false (caller must not switch server) if there is no host, the port is not a number in
+// 1..65535, or the user part contains ':' (user:password is not supported).
 bool SftpParseHostSpec(const char* userPart, char* user, int userSize, char* host, int hostSize, int* port)
 {
     user[0] = 0;
@@ -289,10 +290,24 @@ bool SftpParseHostSpec(const char* userPart, char* user, int userSize, char* hos
     if (at != NULL)
     {
         *at = 0;
+        if (strchr(buf, ':') != NULL)
+            return false;
         lstrcpyn(user, buf, userSize);
         hostpart = at + 1;
     }
-    char* colon = strchr(hostpart, ':');
+    char* colon;
+    if (hostpart[0] == '[')
+    {
+        char* close = strchr(hostpart, ']');
+        if (close == NULL || close == hostpart + 1 || strchr(hostpart + 1, ':') == NULL ||
+            (close[1] != 0 && close[1] != ':'))
+            return false;
+        *close = 0;
+        hostpart++; // drop '['
+        colon = (close[1] == ':') ? close + 1 : NULL; // the ':' before the port, as in the plain case
+    }
+    else
+        colon = strchr(hostpart, ':');
     if (colon != NULL)
     {
         *colon = 0;

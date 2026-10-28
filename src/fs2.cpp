@@ -2324,15 +2324,26 @@ bool CPluginFSInterface::EnsureConnected(HWND parent)
     return r;
 }
 
+// host as written in a path: an IPv6 literal (contains ':') gets its brackets back
+static void SftpHostForPath(const char* host, char* out, int outSize)
+{
+    if (strchr(host, ':') != NULL)
+        _snprintf_s(out, outSize, _TRUNCATE, "[%s]", host);
+    else
+        lstrcpyn(out, host, outSize);
+}
+
 void CPluginFSInterface::HostPrefix(char* out, int outSize) const
 {
     char portpart[16] = "";
     if (Profile.Port != 0 && Profile.Port != 22)
         _snprintf_s(portpart, _TRUNCATE, ":%d", Profile.Port);
+    char host[270];
+    SftpHostForPath(Profile.Host, host, sizeof(host));
     if (Profile.User[0] != 0)
-        _snprintf_s(out, outSize, _TRUNCATE, "//%s@%s%s", Profile.User, Profile.Host, portpart);
+        _snprintf_s(out, outSize, _TRUNCATE, "//%s@%s%s", Profile.User, host, portpart);
     else
-        _snprintf_s(out, outSize, _TRUNCATE, "//%s%s", Profile.Host, portpart);
+        _snprintf_s(out, outSize, _TRUNCATE, "//%s%s", host, portpart);
 }
 
 void WINAPI
@@ -2365,23 +2376,29 @@ static void SftpHostPrefix(const CSftpProfile& prof, char* out, int outSize)
     char portpart[16] = "";
     if (prof.Port != 0 && prof.Port != 22)
         _snprintf_s(portpart, _TRUNCATE, ":%d", prof.Port);
+    char host[270];
+    SftpHostForPath(prof.Host, host, sizeof(host));
     if (prof.User[0] != 0)
-        _snprintf_s(out, outSize, _TRUNCATE, "//%s@%s%s", prof.User, prof.Host, portpart);
+        _snprintf_s(out, outSize, _TRUNCATE, "//%s@%s%s", prof.User, host, portpart);
     else
-        _snprintf_s(out, outSize, _TRUNCATE, "//%s%s", prof.Host, portpart);
+        _snprintf_s(out, outSize, _TRUNCATE, "//%s%s", host, portpart);
 }
 
 // if "//user@host[:port]/..." contains a different host/user/port than current profile, switch profile
 // and force new connection (allows entering sftp://user@host/ directly in address bar).
 // Credentials of the previous server are never carried over: the new profile is either a full copy of
 // a saved profile for exactly this host+user+port, or a bare Host/User/Port (EnsureConnected prompts).
-// An invalid port in the typed path makes the switch be ignored (stay on the current server).
-static void SftpParseHostInto(CSftpProfile& prof, CSftpConnection& conn, const char* userPart)
+// Returns FALSE only if the path starts with "//" but the host spec is invalid (bad port, IPv6 syntax,
+// "user:password@"): the caller must not navigate, or it would act on the previous server.
+static BOOL SftpParseHostInto(CSftpProfile& prof, CSftpConnection& conn, const char* userPart)
 {
     char user[128], host[256];
     int port;
     if (!SftpParseHostSpec(userPart, user, sizeof(user), host, sizeof(host), &port))
-        return;
+    {
+        bool hasSpec = (userPart[0] == '/' || userPart[0] == '\\') && (userPart[1] == '/' || userPart[1] == '\\');
+        return !hasSpec; // no host spec at all -> stay on the current server
+    }
     if (_stricmp(host, prof.Host) != 0 || (user[0] != 0 && _stricmp(user, prof.User) != 0) ||
         port != (prof.Port > 0 ? prof.Port : 22))
     {
@@ -2407,6 +2424,7 @@ static void SftpParseHostInto(CSftpProfile& prof, CSftpConnection& conn, const c
         prof = fresh;
         conn.Disconnect(); // different server -> new connection
     }
+    return TRUE;
 }
 
 BOOL WINAPI
@@ -2510,8 +2528,13 @@ CPluginFSInterface::ChangePath(int currentFSNameIndex, char* fsName, int fsNameI
         Profile = ConnectData.Profile;
         Profile.Valid = true;
     }
-    else
-        SftpParseHostInto(Profile, Conn, userPart);
+    else if (!SftpParseHostInto(Profile, Conn, userPart))
+    {
+        char eb[MAX_PATH + 64];
+        _snprintf_s(eb, _TRUNCATE, "Invalid host or port in path: %s", userPart);
+        SalamanderGeneral->SalMessageBox(parent, eb, LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
+        return FALSE;
+    }
 
     if (!EnsureConnected(parent))
         return FALSE;
