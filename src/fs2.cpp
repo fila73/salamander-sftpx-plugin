@@ -2387,7 +2387,9 @@ static void SftpHostPrefix(const CSftpProfile& prof, char* out, int outSize)
 // if "//user@host[:port]/..." contains a different host/user/port than current profile, switch profile
 // and force new connection (allows entering sftp://user@host/ directly in address bar).
 // Credentials of the previous server are never carried over: the new profile is either a full copy of
-// a saved profile for exactly this host+user+port, or a bare Host/User/Port (EnsureConnected prompts).
+// a saved profile for exactly this host+user+port, or a bare Host/User/Port with an empty password
+// (authentication then tries an empty password; only keyboard-interactive, if the server offers it,
+// prompts).
 // Returns FALSE only if the path starts with "//" but the host spec is invalid (bad port, IPv6 syntax,
 // "user:password@"): the caller must not navigate, or it would act on the previous server.
 static BOOL SftpParseHostInto(CSftpProfile& prof, CSftpConnection& conn, const char* userPart)
