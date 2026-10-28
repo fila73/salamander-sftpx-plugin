@@ -736,6 +736,7 @@ public:
     char Path[MAX_PATH];             // current path
     BOOL PathError;                  // TRUE if ListCurrentPath failed (path error); ChangePath will be called
     BOOL FatalError;                 // TRUE if ListCurrentPath failed (fatal error); ChangePath will be called
+    BOOL ChangePathCalled;           // TRUE once ChangePath was called (FALSE = fresh FS from OpenFS)
     CTopIndexMem TopIndexMem;        // top-index cache used by ExecuteOnFS()
     BOOL CalledFromDisconnectDialog; // TRUE = the user wants to disconnect this FS from the Disconnect dialog (F12)
 

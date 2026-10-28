@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <deque>
+#include <memory>
 #include "sftpconn.h"
 #include "sftpglue.h"
 
@@ -95,6 +96,20 @@ struct CSftpTransferState
     }
 };
 
+// Completion signal that outlives the worker (the dialog may delete the worker right after it finishes):
+// Event is set when the worker thread is done, Failed tells whether there was an error or a cancel.
+struct CSftpWorkerCompletion
+{
+    HANDLE Event;
+    volatile LONG Failed;
+    CSftpWorkerCompletion() : Event(CreateEvent(NULL, TRUE, FALSE, NULL)), Failed(0) {}
+    ~CSftpWorkerCompletion()
+    {
+        if (Event != NULL)
+            CloseHandle(Event);
+    }
+};
+
 // Observer interface for detached dialog notification
 class ISftpTransferDlgObserver
 {
@@ -129,6 +144,8 @@ public:
     bool HasTasks() const;
     void SetDlgHwnd(HWND hwnd) { DlgHwnd = hwnd; }
     void SetObserver(ISftpTransferDlgObserver* obs) { AttachedObserver = obs; }
+    // Must be called before Start(); the worker signals it when the thread finishes (or is stopped)
+    void SetCompletion(const std::shared_ptr<CSftpWorkerCompletion>& c) { Completion = c; }
 
     // Take a thread-safe snapshot of the current state
     void GetStateSnapshot(CSftpTransferState& outState);
@@ -141,6 +158,7 @@ public:
 private:
     static unsigned __stdcall ThreadEntryPoint(void* param);
     void ThreadLoop();
+    void SignalCompletion();
 
     bool ExecuteTask(CSftpTransferTask& task);
     bool DoDownloadRecursive(const std::string& remote, const std::string& local, bool isDir, bool deleteSource = false);
@@ -166,6 +184,7 @@ private:
     CSftpTransferState State;
     ISftpTransferDlgObserver* AttachedObserver;
     bool Initialized;
+    std::shared_ptr<CSftpWorkerCompletion> Completion;
 
     // Overwrite decision handling in worker
     std::string SkippedLinkPath;  // first junction/symlink directory of the current task that was skipped

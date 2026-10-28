@@ -2207,6 +2207,7 @@ CPluginFSInterface::CPluginFSInterface()
     Path[0] = 0;
     PathError = FALSE;
     FatalError = FALSE;
+    ChangePathCalled = FALSE;
     CalledFromDisconnectDialog = FALSE;
     memset(&Profile, 0, sizeof(Profile));
     Profile.Port = 22;
@@ -2486,6 +2487,7 @@ CPluginFSInterface::ChangePath(int currentFSNameIndex, char* fsName, int fsNameI
         TRACE_E("Incorrect value of 'mode' in CPluginFSInterface::ChangePath().");
         mode = 3;
     }
+    ChangePathCalled = TRUE;
     if (pathWasCut != NULL)
         *pathWasCut = FALSE;
     if (cutFileName != NULL)
@@ -4177,6 +4179,26 @@ BOOL DFS_IsValidPath(const char* path, CDFSPathError* err)
     return FALSE;
 }
 
+enum { tkWindows, tkOurs, tkOther };
+
+// Classifies a user-entered copy/move target. "//host/path" is treated as ours (the SFTP syntax);
+// Windows UNC paths start with backslashes.
+static int SftpClassifyTarget(const char* fsName, const char* p)
+{
+    if (p == NULL)
+        return tkOther;
+    size_t n = (fsName != NULL) ? strlen(fsName) : 0;
+    if (_strnicmp(p, "sftp:", 5) == 0 || (n > 0 && _strnicmp(p, fsName, n) == 0 && p[n] == ':'))
+        return tkOurs;
+    if (p[0] == '/')
+        return tkOurs;
+    if (isalpha((unsigned char)p[0]) && p[1] == ':')
+        return tkWindows;
+    if (p[0] == '\\' && p[1] == '\\')
+        return tkWindows;
+    return tkOther;
+}
+
 BOOL WINAPI
 CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HWND parent,
                                      int panel, int selectedFiles, int selectedDirs,
@@ -4191,24 +4213,55 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
     if (mode == 4) // path processing error -> let user fix it
         return FALSE;
 
-    // trim mask (*.* etc.) from target path, keep directory
+    if (mode != 2 && mode != 3 && mode != 5)
+        return FALSE;
+
     char target[2 * MAX_PATH];
-    lstrcpyn(target, targetPath, 2 * MAX_PATH);
+    BOOL diskPath;
+    if (mode == 3)
     {
-        char* lastBs = strrchr(target, '\\');
-        char* comp = (lastBs != NULL) ? lastBs + 1 : target;
-        if (strchr(comp, '*') != NULL || strchr(comp, '?') != NULL)
+        // Salamander already validated/created the Windows directory; first string only (mask unsupported)
+        lstrcpyn(target, targetPath, 2 * MAX_PATH);
+        diskPath = TRUE;
+    }
+    else
+    {
+        lstrcpyn(target, targetPath, 2 * MAX_PATH);
+        int kind = SftpClassifyTarget(fsName, target);
+        if (mode == 2)
         {
-            if (lastBs != NULL)
-                *lastBs = 0;
-            else
-                target[0] = 0;
+            if (kind != tkOurs)
+            {
+                // Windows path: let Salamander split/create it and call mode 3; foreign FS or
+                // archive path: Salamander reports it and calls mode 4. targetPath stays unchanged.
+                cancelOrHandlePath = TRUE;
+                return FALSE;
+            }
+            diskPath = FALSE;
+            // trim mask (*.* etc.) from the target path, keep directory
+            char* lastSep = target + strlen(target);
+            while (lastSep > target && lastSep[-1] != '\\' && lastSep[-1] != '/')
+                lastSep--;
+            if (strchr(lastSep, '*') != NULL || strchr(lastSep, '?') != NULL)
+            {
+                if (lastSep > target)
+                    lastSep[-1] = 0;
+                else
+                    target[0] = 0;
+            }
+        }
+        else // mode 5 (drag&drop)
+        {
+            if (kind == tkOther)
+            {
+                SalamanderGeneral->SalMessageBox(parent, "The target path is not supported by the SFTP plugin.\nOnly disk paths and SFTP paths are allowed.",
+                                                 LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
+                cancelOrHandlePath = TRUE;
+                return TRUE;
+            }
+            diskPath = (kind == tkWindows);
         }
     }
-
-    // target must be a disk path (X:\... or \\server\...)
-    BOOL diskPath = (target[0] != 0 && target[1] == ':') ||
-                    (target[0] == '\\' && target[1] == '\\');
 
     if (!EnsureConnected(parent))
     {
@@ -4518,10 +4571,50 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
         return TRUE;
     }
 
-    // get user-part of target path (after "fsName://host") and trim mask -> remote directory
+    // user-part of the target path (after "fsName:"), "//user@host[:port]/dir" or "/dir", without mask
+    char userPart[MAX_PATH];
+    {
+        const char* colon = strchr(targetPath, ':');
+        lstrcpyn(userPart, (colon != NULL) ? colon + 1 : targetPath, MAX_PATH);
+    }
+
+    // host spec (if present)
+    char specHost[256] = "";
+    char specUser[128] = "";
+    int specPort = 22;
+    if ((userPart[0] == '/' || userPart[0] == '\\') && (userPart[1] == '/' || userPart[1] == '\\'))
+    {
+        const char* hostStart = userPart + 2;
+        const char* slash = hostStart;
+        while (*slash != 0 && *slash != '/' && *slash != '\\')
+            slash++;
+        int hLen = (int)(slash - hostStart);
+        if (hLen > 0 && hLen < 320)
+        {
+            char hostBuf[320];
+            memcpy(hostBuf, hostStart, hLen);
+            hostBuf[hLen] = 0;
+            char* hpart = hostBuf;
+            char* at = strchr(hostBuf, '@');
+            if (at != NULL)
+            {
+                *at = 0;
+                lstrcpyn(specUser, hostBuf, sizeof(specUser));
+                hpart = at + 1;
+            }
+            char* colon = strchr(hpart, ':');
+            if (colon != NULL)
+            {
+                *colon = 0;
+                if (atoi(colon + 1) > 0)
+                    specPort = atoi(colon + 1);
+            }
+            lstrcpyn(specHost, hpart, sizeof(specHost));
+        }
+    }
+
     char remoteDir[MAX_PATH];
-    char* up = strchr(targetPath, ':');
-    lstrcpyn(remoteDir, SftpStripHost((up != NULL) ? up + 1 : targetPath), MAX_PATH);
+    lstrcpyn(remoteDir, SftpStripHost(userPart), MAX_PATH);
     for (char* p = remoteDir; *p; p++)
         if (*p == '\\')
             *p = '/';
@@ -4536,10 +4629,69 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
                 remoteDir[0] = 0;
         }
     }
+    if (remoteDir[0] == 0 && specHost[0] == 0 && ChangePathCalled && Path[0] != 0)
+        lstrcpyn(remoteDir, Path, MAX_PATH);
     SftpNormalize(remoteDir);
+
+    // A fresh FS (OpenFS, no ChangePath yet) is initialised from the target path and is closed
+    // right after this call, so the transfer must finish before returning.
+    BOOL fresh = !ChangePathCalled;
+    if (fresh)
+    {
+        if (specHost[0] == 0)
+        {
+            SalamanderGeneral->SalMessageBox(parent, "The target path does not specify an SFTP server.",
+                                             LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
+            if (invalidPathOrCancel != NULL)
+                *invalidPathOrCancel = TRUE;
+            return FALSE;
+        }
+        // use the saved profile of exactly this host (so its credentials only go to its own host)
+        CSftpProfile fresh_prof;
+        memset(&fresh_prof, 0, sizeof(fresh_prof));
+        for (int i = 0; i < SftpProfileCount; i++)
+        {
+            if (_stricmp(SftpProfiles[i].Host, specHost) == 0 &&
+                (SftpProfiles[i].Port > 0 ? SftpProfiles[i].Port : 22) == specPort &&
+                (specUser[0] == 0 || _stricmp(SftpProfiles[i].User, specUser) == 0))
+            {
+                SftpProfileFromSaved(fresh_prof, SftpProfiles[i]);
+                break;
+            }
+        }
+        if (fresh_prof.Host[0] == 0)
+        {
+            lstrcpyn(fresh_prof.Host, specHost, sizeof(fresh_prof.Host));
+            lstrcpyn(fresh_prof.User, specUser, sizeof(fresh_prof.User));
+            fresh_prof.Port = specPort;
+            fresh_prof.Valid = true;
+        }
+        Conn.Disconnect();
+        Profile = fresh_prof;
+    }
+    else if (specHost[0] != 0 &&
+             (_stricmp(specHost, Profile.Host) != 0 || specPort != Profile.Port ||
+              (specUser[0] != 0 && _stricmp(specUser, Profile.User) != 0)))
+    {
+        // this FS is connected elsewhere: ask Salamander for another FS
+        if (invalidPathOrCancel != NULL)
+            *invalidPathOrCancel = FALSE;
+        return FALSE;
+    }
+    BOOL sync = fresh || mode == 3;
 
     if (!EnsureConnected(parent))
     {
+        if (invalidPathOrCancel != NULL)
+            *invalidPathOrCancel = TRUE;
+        return FALSE;
+    }
+
+    if (Conn.PathType(remoteDir) != 2)
+    {
+        char eb[MAX_PATH + 128];
+        _snprintf_s(eb, _TRUNCATE, "The target directory does not exist on the server:\n%s", remoteDir);
+        SalamanderGeneral->SalMessageBox(parent, eb, LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
         if (invalidPathOrCancel != NULL)
             *invalidPathOrCancel = TRUE;
         return FALSE;
@@ -4587,8 +4739,12 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
     SetForegroundWindow(dlg->HWindow);
     dlg->SetOperationInfo(true, sourcePath, remoteDir, totalFiles, 0, connName);
 
-    char fsfull[MAX_PATH + 32];
-    _snprintf_s(fsfull, _TRUNCATE, "%s:%s", fsName, remoteDir);
+    char fsfull[MAX_PATH + 352];
+    {
+        char prefix[320];
+        HostPrefix(prefix, sizeof(prefix));
+        _snprintf_s(fsfull, _TRUNCATE, "%s:%s%s", fsName, prefix, remoteDir);
+    }
     dlg->SetNotifyPaths(fsfull, sourcePath, !copy);
 
     while ((name = next(NULL, 0, &dosName, &isDir, &size, &attr, &lastWrite, nextParam, NULL)) != NULL)
@@ -4614,11 +4770,53 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
         worker->EnqueueTask(task);
     }
 
-    dlg->SetFS(this);
-    dlg->AttachWorker(worker, true);
-    RegisterTransferDlg(dlg);
-    worker->Start(Profile, dlg->HWindow);
+    if (!sync)
+    {
+        dlg->SetFS(this);
+        dlg->AttachWorker(worker, true);
+        RegisterTransferDlg(dlg);
+        worker->Start(Profile, dlg->HWindow);
+        return TRUE;
+    }
 
+    // Synchronous: Salamander deletes temp sources / closes this FS right after we return, so the
+    // dialog must not know the FS (no SetFS / RegisterTransferDlg) and we wait for the worker.
+    std::shared_ptr<CSftpWorkerCompletion> done = std::make_shared<CSftpWorkerCompletion>();
+    worker->SetCompletion(done);
+    dlg->AttachWorker(worker, true); // the dialog owns the worker and may delete it once it finishes
+    if (done->Event == NULL || !worker->Start(Profile, dlg->HWindow))
+    {
+        if (invalidPathOrCancel != NULL)
+            *invalidPathOrCancel = TRUE;
+        return TRUE;
+    }
+
+    // pump messages: the dialog thread may SendMessage to 'parent'
+    int quitCode = -1;
+    for (;;)
+    {
+        DWORD r = MsgWaitForMultipleObjects(1, &done->Event, FALSE, INFINITE, QS_ALLINPUT);
+        if (r == WAIT_OBJECT_0)
+            break;
+        if (r != WAIT_OBJECT_0 + 1)
+            break; // wait failed
+        MSG msg;
+        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+        {
+            if (msg.message == WM_QUIT)
+                quitCode = (int)msg.wParam; // re-posted below, keep waiting for the worker
+            else
+            {
+                TranslateMessage(&msg);
+                DispatchMessage(&msg);
+            }
+        }
+    }
+    if (quitCode != -1)
+        PostQuitMessage(quitCode);
+
+    if (invalidPathOrCancel != NULL)
+        *invalidPathOrCancel = (WaitForSingleObject(done->Event, 0) != WAIT_OBJECT_0 || done->Failed != 0) ? TRUE : FALSE;
     return TRUE;
 }
 

@@ -196,6 +196,7 @@ void CSftpTransferWorker::Stop()
     CloseHandle(ThreadHandle);
     ThreadHandle = NULL;
     ThreadId = 0;
+    SignalCompletion(); // thread was terminated before it could signal
 
     WorkerConn.Disconnect();
 
@@ -320,6 +321,18 @@ void CSftpTransferWorker::GetTasksSnapshot(std::vector<CSftpTransferTask>& outTa
     LeaveCriticalSection(&QueueLock);
 }
 
+void CSftpTransferWorker::SignalCompletion()
+{
+    std::shared_ptr<CSftpWorkerCompletion> c = Completion;
+    if (!c || c->Event == NULL || WaitForSingleObject(c->Event, 0) == WAIT_OBJECT_0)
+        return;
+    EnterCriticalSection(&State.Lock);
+    bool failed = State.HasError || State.Cancelled;
+    LeaveCriticalSection(&State.Lock);
+    InterlockedExchange(&c->Failed, failed ? 1 : 0);
+    SetEvent(c->Event);
+}
+
 unsigned __stdcall CSftpTransferWorker::ThreadEntryPoint(LPVOID param)
 {
     CSftpTransferWorker* worker = static_cast<CSftpTransferWorker*>(param);
@@ -348,6 +361,7 @@ void CSftpTransferWorker::ThreadLoop()
         strncpy_s(State.ErrorMsg, WorkerConn.LastError(), _TRUNCATE);
         LeaveCriticalSection(&State.Lock);
 
+        SignalCompletion();
         if (DlgHwnd)
             PostMessage(DlgHwnd, WM_APP_SFTP_WORKER_FINISHED, 0, 0);
         return;
@@ -481,6 +495,7 @@ void CSftpTransferWorker::ThreadLoop()
     State.IsRunning = false;
     LeaveCriticalSection(&State.Lock);
 
+    SignalCompletion();
     if (DlgHwnd)
         PostMessage(DlgHwnd, WM_APP_SFTP_WORKER_FINISHED, 0, 0);
 
