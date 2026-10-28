@@ -103,12 +103,10 @@ bool SftpEnsureConnected(HWND parent, CSftpConnection& conn, CSftpProfile& profi
 
 void SftpNormalize(char* path)
 {
-    // normalize to "/", split into components, resolve "." and ".."
+    // split into components by "/", resolve "." and ".."
+    // backslash is NOT a separator: on a POSIX server it is an ordinary filename character
     char tmp[MAX_PATH];
     lstrcpyn(tmp, (path && *path) ? path : "/", MAX_PATH);
-    for (char* p = tmp; *p; p++)
-        if (*p == '\\')
-            *p = '/';
 
     const char* parts[256];
     int n = 0;
@@ -153,6 +151,28 @@ void SftpJoin(const char* base, const char* name, char* out, int outSize)
     SftpNormalize(out);
 }
 
+bool SftpJoinName(const char* base, const char* name, char* out, int outSize)
+{
+    // 'name' is ONE literal path component (e.g. from a server listing): never normalized,
+    // so it cannot climb ("..") or split ("/"); backslash is kept as an ordinary character
+    if (out != NULL && outSize > 0)
+        out[0] = 0;
+    if (name == NULL || name[0] == 0 || strcmp(name, ".") == 0 || strcmp(name, "..") == 0 ||
+        strchr(name, '/') != NULL)
+        return false;
+    char b[MAX_PATH];
+    lstrcpyn(b, (base && *base) ? base : "/", MAX_PATH);
+    int bl = (int)strlen(b);
+    if (bl > 0 && b[bl - 1] == '/')
+        b[bl - 1] = 0; // remove trailing slash (root "/" -> "" -> joins to "/name")
+    if (_snprintf_s(out, outSize, _TRUNCATE, "%s/%s", b, name) < 0)
+    {
+        out[0] = 0; // too long
+        return false;
+    }
+    return true;
+}
+
 void SftpParent(const char* path, char* out, int outSize)
 {
     lstrcpyn(out, (path && *path) ? path : "/", outSize);
@@ -161,6 +181,35 @@ void SftpParent(const char* path, char* out, int outSize)
         *(slash + 1) = 0; // keep root "/"
     else if (slash != NULL)
         *slash = 0;
+}
+
+// Typed-path rule: a remote path part that STARTS with '\' is a Windows-style typed path (e.g.
+// "sftp:\\host\home\u"), so all its '\' become '/'; otherwise '\' is a literal name character
+// (panel-generated paths always start with '/').
+void SftpFixTypedPath(char* path)
+{
+    if (path == NULL || path[0] != '\\')
+        return;
+    for (char* s = path; *s; s++)
+        if (*s == '\\')
+            *s = '/';
+}
+
+// "//user@host/path" (either slash kind) -> path part after the host, typed-path rule applied;
+// input without host prefix is treated as the path part. Empty path after host -> "/".
+void SftpRemotePart(const char* userPart, char* out, int outSize)
+{
+    const char* p = (userPart != NULL) ? userPart : "";
+    if ((p[0] == '/' || p[0] == '\\') && (p[1] == '/' || p[1] == '\\'))
+    {
+        p += 2;
+        while (*p != 0 && *p != '/' && *p != '\\')
+            p++;
+        if (*p == 0)
+            p = "/";
+    }
+    lstrcpyn(out, p, outSize);
+    SftpFixTypedPath(out);
 }
 
 bool SftpIsSamePath(const char* a, const char* b)
