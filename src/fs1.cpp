@@ -226,8 +226,13 @@ static void GetSelFolder(HWND HWindow, char* out, int outSize)
 // Static profile holding current values in the connection dialog
 static CSftpProfile g_DlgProfile;
 
+// master password prompt is shown at most once per dialog; when the stored password of a profile
+// cannot be decrypted, its name is remembered so that saving with an empty password field keeps the blob
+static bool g_MpAskDeclined = false;
+static char g_PwdLockedName[128] = "";
+
 // load profile into dialog fields
-static void LoadProfileToFields(HWND HWindow, const CSftpSavedProfile& p)
+static void LoadProfileToFields(HWND HWindow, CSftpSavedProfile& p)
 {
     lstrcpyn(g_DlgProfile.Name, p.Name, sizeof(g_DlgProfile.Name));
     char portStr[16];
@@ -235,7 +240,20 @@ static void LoadProfileToFields(HWND HWindow, const CSftpSavedProfile& p)
     _snprintf_s(portStr, _TRUNCATE, "%d", p.Port > 0 ? p.Port : 22);
     SetDlgItemText(HWindow, IDC_PORT, portStr);
     SetDlgItemText(HWindow, IDC_USER, p.User);
-    SetDlgItemText(HWindow, IDC_PASSWORD, p.Password);
+    {
+        // decrypt on the main thread only for display; refused master password -> empty field, blob kept
+        char pwd[256];
+        bool ok = SftpSavedGetPassword(HWindow, p, pwd, sizeof(pwd), !g_MpAskDeclined);
+        if (!ok)
+        {
+            g_MpAskDeclined = true;
+            lstrcpyn(g_PwdLockedName, p.Name, sizeof(g_PwdLockedName));
+        }
+        else
+            g_PwdLockedName[0] = 0;
+        SetDlgItemText(HWindow, IDC_PASSWORD, pwd);
+        SecureZeroMemory(pwd, sizeof(pwd));
+    }
     SetDlgItemText(HWindow, IDC_KEYFILE, p.KeyFile);
     SetDlgItemText(HWindow, IDC_PATH, p.Path[0] != 0 ? p.Path : "/");
     SetDlgItemText(HWindow, IDC_SFTPSERVER, p.SftpServer);
@@ -460,6 +478,9 @@ INT_PTR CALLBACK ConnectDlgProc(HWND HWindow, UINT uMsg, WPARAM wParam, LPARAM l
         SendMessage(enc, CB_ADDSTRING, 0, (LPARAM) "UTF-8");
         SendMessage(enc, CB_ADDSTRING, 0, (LPARAM) "Off (no conversion)");
         SendMessage(enc, CB_SETCURSEL, (SftpEncoding >= 0 && SftpEncoding <= 2) ? SftpEncoding : 0, 0);
+
+        g_MpAskDeclined = false;
+        g_PwdLockedName[0] = 0;
 
         // fill category tree (like WinSCP); advanced pages hidden
         BuildConnectTree(GetDlgItem(HWindow, IDC_CATTREE), false);
@@ -733,7 +754,6 @@ INT_PTR CALLBACK ConnectDlgProc(HWND HWindow, UINT uMsg, WPARAM wParam, LPARAM l
             if (p.Port <= 0)
                 p.Port = 22;
             GetDlgItemText(HWindow, IDC_USER, p.User, sizeof(p.User));
-            GetDlgItemText(HWindow, IDC_PASSWORD, p.Password, sizeof(p.Password));
             GetDlgItemText(HWindow, IDC_KEYFILE, p.KeyFile, sizeof(p.KeyFile));
             GetDlgItemText(HWindow, IDC_PATH, p.Path, sizeof(p.Path));
             GetDlgItemText(HWindow, IDC_SFTPSERVER, p.SftpServer, sizeof(p.SftpServer));
@@ -772,6 +792,29 @@ INT_PTR CALLBACK ConnectDlgProc(HWND HWindow, UINT uMsg, WPARAM wParam, LPARAM l
                         targetIndex = i;
                         break;
                     }
+            }
+
+            {
+                // password: encrypt via the password manager (may ask for the master password)
+                char pwd[256];
+                GetDlgItemText(HWindow, IDC_PASSWORD, pwd, sizeof(pwd));
+                bool ok = true;
+                if (pwd[0] == 0 && targetIndex >= 0 && g_PwdLockedName[0] != 0 &&
+                    strcmp(g_PwdLockedName, SftpProfiles[targetIndex].Name) == 0)
+                {
+                    // stored password could not be decrypted and the field is empty -> keep the old blob
+                    memcpy(p.EncPassword, SftpProfiles[targetIndex].EncPassword, sizeof(p.EncPassword));
+                    p.EncPasswordSize = SftpProfiles[targetIndex].EncPasswordSize;
+                }
+                else
+                    ok = SftpSavedSetPassword(HWindow, p, pwd);
+                SecureZeroMemory(pwd, sizeof(pwd));
+                if (!ok)
+                {
+                    SalamanderGeneral->SalMessageBox(HWindow, "The password cannot be stored without the master password. The connection was not saved.",
+                                                     LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
+                    return TRUE;
+                }
             }
 
             if (targetIndex >= 0)

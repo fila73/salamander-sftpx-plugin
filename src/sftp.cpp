@@ -840,7 +840,20 @@ CPluginInterface::LoadConfiguration(HWND parent, HKEY regKey, CSalamanderRegistr
                     registry->GetValue(pk, "Port", REG_DWORD, &port, sizeof(DWORD));
                     p.Port = (int)port;
                     registry->GetValue(pk, "User", REG_SZ, p.User, sizeof(p.User));
-                    registry->GetValue(pk, "Password", REG_SZ, p.Password, sizeof(p.Password));
+                    // password: encrypted blob; a legacy plaintext "Password" value is converted
+                    // (and removed from the registry on the next save)
+                    DWORD encSize = 0;
+                    if (registry->GetSize(pk, "EncryptedPassword", REG_BINARY, encSize) && encSize > 0 &&
+                        encSize <= SFTP_MAX_ENCPASSWORD &&
+                        registry->GetValue(pk, "EncryptedPassword", REG_BINARY, p.EncPassword, encSize))
+                        p.EncPasswordSize = (int)encSize;
+                    else
+                    {
+                        char legacy[256] = "";
+                        if (registry->GetValue(pk, "Password", REG_SZ, legacy, sizeof(legacy)))
+                            SftpSavedSetLegacyPassword(p, legacy);
+                        SecureZeroMemory(legacy, sizeof(legacy));
+                    }
                     registry->GetValue(pk, "KeyFile", REG_SZ, p.KeyFile, sizeof(p.KeyFile));
                     registry->GetValue(pk, "Path", REG_SZ, p.Path, sizeof(p.Path));
                     registry->GetValue(pk, "SftpServer", REG_SZ, p.SftpServer, sizeof(p.SftpServer));
@@ -927,7 +940,13 @@ CPluginInterface::SaveConfiguration(HWND parent, HKEY regKey, CSalamanderRegistr
                 DWORD port = (DWORD)SftpProfiles[i].Port;
                 registry->SetValue(pk, "Port", REG_DWORD, &port, sizeof(DWORD));
                 registry->SetValue(pk, "User", REG_SZ, SftpProfiles[i].User, -1);
-                registry->SetValue(pk, "Password", REG_SZ, SftpProfiles[i].Password, -1);
+                // only the encrypted blob is stored (kept as-is even if the master password was not entered)
+                if (SftpProfiles[i].EncPasswordSize > 0)
+                    registry->SetValue(pk, "EncryptedPassword", REG_BINARY, SftpProfiles[i].EncPassword,
+                                       (DWORD)SftpProfiles[i].EncPasswordSize);
+                else
+                    registry->DeleteValue(pk, "EncryptedPassword");
+                registry->DeleteValue(pk, "Password"); // remove legacy plaintext value
                 registry->SetValue(pk, "KeyFile", REG_SZ, SftpProfiles[i].KeyFile, -1);
                 registry->SetValue(pk, "Path", REG_SZ, SftpProfiles[i].Path, -1);
                 registry->SetValue(pk, "SftpServer", REG_SZ, SftpProfiles[i].SftpServer, -1);
@@ -1031,6 +1050,15 @@ void WINAPI
 CPluginInterface::PasswordManagerEvent(HWND parent, int event)
 {
     TRACE_I("PasswordManagerEvent(): event=" << event);
+    if (event == PME_MASTERPASSWORDCREATED || event == PME_MASTERPASSWORDCHANGED || event == PME_MASTERPASSWORDREMOVED)
+    {
+        if (!SftpSavedReencryptAll(parent, event))
+        {
+            // at least one password could not be decrypted (encrypted with another master password)
+            SalamanderGeneral->SalMessageBox(parent, "Some saved SFTP passwords could not be decrypted and were left unchanged.",
+                                             LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
+        }
+    }
 }
 
 CPluginInterfaceForArchiverAbstract* WINAPI

@@ -2412,7 +2412,7 @@ static BOOL SftpParseHostInto(CSftpProfile& prof, CSftpConnection& conn, const c
                 (user[0] == 0 || _stricmp(user, SftpProfiles[i].User) == 0) &&
                 port == (SftpProfiles[i].Port > 0 ? SftpProfiles[i].Port : 22))
             {
-                SftpProfileFromSaved(fresh, SftpProfiles[i]); // its own credentials, sent only to its own host
+                SftpProfileFromSaved(SalamanderGeneral->GetMsgBoxParent(), fresh, SftpProfiles[i]); // its own credentials, sent only to its own host
                 break;
             }
         }
@@ -4474,7 +4474,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                         (targetUser[0] == 0 || _stricmp(SftpProfiles[i].User, targetUser) == 0) &&
                         (SftpProfiles[i].Port > 0 ? SftpProfiles[i].Port : 22) == targetPort)
                     {
-                        SftpProfileFromSaved(targetProfile, SftpProfiles[i]);
+                        SftpProfileFromSaved(parent, targetProfile, SftpProfiles[i]);
                         break;
                     }
                 }
@@ -4771,7 +4771,7 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
                 (SftpProfiles[i].Port > 0 ? SftpProfiles[i].Port : 22) == specPort &&
                 (specUser[0] == 0 || _stricmp(SftpProfiles[i].User, specUser) == 0))
             {
-                SftpProfileFromSaved(fresh_prof, SftpProfiles[i]);
+                SftpProfileFromSaved(parent, fresh_prof, SftpProfiles[i]);
                 break;
             }
         }

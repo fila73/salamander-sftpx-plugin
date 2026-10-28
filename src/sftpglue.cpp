@@ -440,3 +440,142 @@ void SftpCheckHeap(const char* where)
 {
     SftpTraceLog("HeapCheck: %s", where);
 }
+
+// ---------------------------------------------------------------------------
+// Saved profile passwords (Salamander password manager). Main thread only.
+// The profile keeps only the encrypted blob; plaintext exists just in short-lived
+// local buffers that are zeroed after use.
+
+// stores a blob returned by EncryptPassword() into the profile; frees the Salamander buffer
+static bool SftpStoreBlob(CSftpSavedProfile& dst, BYTE* blob, int blobSize)
+{
+    bool ok = blob != NULL && blobSize > 0 && blobSize <= SFTP_MAX_ENCPASSWORD;
+    if (ok)
+    {
+        memcpy(dst.EncPassword, blob, blobSize);
+        dst.EncPasswordSize = blobSize;
+    }
+    if (blob != NULL) // release the buffer allocated in EncryptPassword()
+    {
+        SecureZeroMemory(blob, blobSize);
+        SalamanderGeneral->Free(blob);
+    }
+    return ok;
+}
+
+bool SftpSavedSetPassword(HWND parent, CSftpSavedProfile& dst, const char* plain)
+{
+    if (plain == NULL || plain[0] == 0)
+    {
+        dst.EncPasswordSize = 0;
+        return true;
+    }
+    CSalamanderPasswordManagerAbstract* pm = SalamanderGeneral->GetSalamanderPasswordManager();
+    BOOL aes = pm->IsUsingMasterPassword();
+    if (aes && !pm->IsMasterPasswordSet() && !pm->AskForMasterPassword(parent))
+        return false; // AES needs the master password; keep the old blob
+    BYTE* blob = NULL;
+    int blobSize = 0;
+    if (!pm->EncryptPassword(plain, &blob, &blobSize, aes))
+        return false;
+    return SftpStoreBlob(dst, blob, blobSize);
+}
+
+void SftpSavedSetLegacyPassword(CSftpSavedProfile& dst, const char* legacyPlain)
+{
+    // legacy plaintext registry value: scramble only (no master password needed during load)
+    CSalamanderPasswordManagerAbstract* pm = SalamanderGeneral->GetSalamanderPasswordManager();
+    BYTE* blob = NULL;
+    int blobSize = 0;
+    if (legacyPlain != NULL && legacyPlain[0] != 0 && pm->EncryptPassword(legacyPlain, &blob, &blobSize, FALSE))
+        SftpStoreBlob(dst, blob, blobSize);
+}
+
+bool SftpSavedGetPassword(HWND parent, CSftpSavedProfile& src, char* out, int outSize, bool allowAsk)
+{
+    out[0] = 0;
+    if (src.EncPasswordSize <= 0)
+        return true;
+    CSalamanderPasswordManagerAbstract* pm = SalamanderGeneral->GetSalamanderPasswordManager();
+    if (pm->IsPasswordEncrypted(src.EncPassword, src.EncPasswordSize) &&
+        pm->IsUsingMasterPassword() && !pm->IsMasterPasswordSet())
+    {
+        if (!allowAsk || !pm->AskForMasterPassword(parent))
+            return false; // refused: stored blob stays untouched
+    }
+    char* plain = NULL;
+    if (!pm->DecryptPassword(src.EncPassword, src.EncPasswordSize, &plain) || plain == NULL)
+        return false; // wrong master password / corrupted blob: stored blob stays untouched
+    lstrcpynA(out, plain, outSize);
+    SecureZeroMemory(plain, lstrlenA(plain));
+    SalamanderGeneral->Free(plain);
+    // upgrade a scrambled blob to AES once the master password is known
+    if (out[0] != 0 && pm->IsUsingMasterPassword() && pm->IsMasterPasswordSet() &&
+        !pm->IsPasswordEncrypted(src.EncPassword, src.EncPasswordSize))
+        SftpSavedSetPassword(parent, src, out);
+    return true;
+}
+
+bool SftpSavedReencryptAll(HWND parent, int event)
+{
+    bool allOk = true;
+    CSalamanderPasswordManagerAbstract* pm = SalamanderGeneral->GetSalamanderPasswordManager();
+    for (int i = 0; i < SftpProfileCount; i++)
+    {
+        CSftpSavedProfile& p = SftpProfiles[i];
+        if (p.EncPasswordSize <= 0)
+            continue;
+        char* plain = NULL;
+        // AES -> plain -> scrambled (for created/changed/removed master password)
+        if (pm->IsPasswordEncrypted(p.EncPassword, p.EncPasswordSize))
+        {
+            if (pm->DecryptPassword(p.EncPassword, p.EncPasswordSize, &plain) && plain != NULL)
+            {
+                BYTE* blob = NULL;
+                int blobSize = 0;
+                if (plain[0] == 0)
+                    p.EncPasswordSize = 0;
+                else if (pm->EncryptPassword(plain, &blob, &blobSize, FALSE))
+                    SftpStoreBlob(p, blob, blobSize);
+                SecureZeroMemory(plain, lstrlenA(plain));
+                SalamanderGeneral->Free(plain);
+            }
+            else
+            {
+                allOk = false; // encrypted with another master password, keep the blob as-is
+                continue;
+            }
+        }
+        // scrambled -> plain -> AES (the master password is being created or changed)
+        if (event == PME_MASTERPASSWORDCREATED || event == PME_MASTERPASSWORDCHANGED)
+        {
+            plain = NULL;
+            if (p.EncPasswordSize > 0 &&
+                pm->DecryptPassword(p.EncPassword, p.EncPasswordSize, &plain) && plain != NULL)
+            {
+                SftpSavedSetPassword(parent, p, plain);
+                SecureZeroMemory(plain, lstrlenA(plain));
+                SalamanderGeneral->Free(plain);
+            }
+        }
+    }
+    return allOk;
+}
+
+void SftpProfileFromSaved(HWND parent, CSftpProfile& dst, CSftpSavedProfile& src)
+{
+    lstrcpynA(dst.Name, src.Name, sizeof(dst.Name));
+    lstrcpynA(dst.Host, src.Host, sizeof(dst.Host));
+    dst.Port = src.Port;
+    lstrcpynA(dst.User, src.User, sizeof(dst.User));
+    // if the master password is refused the password stays empty -> normal authentication prompt
+    SftpSavedGetPassword(parent, src, dst.Password, sizeof(dst.Password), true);
+    lstrcpynA(dst.KeyFile, src.KeyFile, sizeof(dst.KeyFile));
+    lstrcpynA(dst.Path, src.Path, sizeof(dst.Path));
+    lstrcpynA(dst.SftpServer, src.SftpServer, sizeof(dst.SftpServer));
+    dst.UseCompression = src.UseCompression;
+    dst.Protocol = src.Protocol;
+    dst.ScpFallback = src.ScpFallback;
+    dst.ExecOnEnter = src.ExecOnEnter;
+    dst.Valid = true;
+}
