@@ -3393,6 +3393,10 @@ static bool SftpDeleteRecursive(CSftpConnection& conn, const char* remote, bool 
 // transfer functions below; Move must not delete the source when this is non-zero
 static int g_SkippedCount = 0;
 
+// Name rejected by SftpDownloadRecursive (empty = failure was something else). The caller clears it
+// before the call and reports it instead of the connection's (unrelated) LastError().
+static char g_DlUnsafeName[MAX_PATH];
+
 // recursive download of file/directory from SFTP to disk
 static bool SftpDownloadRecursive(CSftpConnection& conn, const char* remote, const char* local, bool isDir)
 {
@@ -3459,11 +3463,13 @@ static bool SftpDownloadRecursive(CSftpConnection& conn, const char* remote, con
             !SftpJoinName(remote, entries[i].Name.c_str(), r, MAX_PATH))
         {
             SftpTraceLog("SftpDownloadRecursive: unsafe remote name rejected in %s", remote);
+            lstrcpyn(g_DlUnsafeName, entries[i].Name.c_str(), MAX_PATH);
             return false; // never act on a name that could escape the directory
         }
         if (!LocalJoinName(local, entries[i].Name.c_str(), l, 2 * MAX_PATH))
         {
             SftpTraceLog("SftpDownloadRecursive: name not usable as a local file name rejected in %s", remote);
+            lstrcpyn(g_DlUnsafeName, entries[i].Name.c_str(), MAX_PATH);
             return false; // never build a local path from a name that could escape or hit a device
         }
         if (!SftpDownloadRecursive(conn, r, l, entries[i].IsDir))
@@ -3958,6 +3964,7 @@ void SftpSyncDir(HWND parent, CPluginFSInterface* fs, const char* remoteDir, con
     SftpProgressBegin(parent, isUpload, isUpload ? localDir : remoteDir, isUpload ? remoteDir : localDir, 1, 0, connName, &fs->Conn);
     g_SyncMode = 1;
     bool ok;
+    g_DlUnsafeName[0] = 0;
     if (direction == 0)
         ok = SftpDownloadRecursive(fs->Conn, remoteDir, localDir, true);
     else
@@ -3969,7 +3976,10 @@ void SftpSyncDir(HWND parent, CPluginFSInterface* fs, const char* remoteDir, con
     if (!ok && !SftpIsCancelled())
     {
         char eb[600];
-        _snprintf_s(eb, _TRUNCATE, "Synchronization failed:\n%s", fs->Conn.LastError());
+        if (direction == 0 && g_DlUnsafeName[0] != 0)
+            _snprintf_s(eb, _TRUNCATE, "Synchronization failed:\nUnsafe file name from server: \"%s\"", g_DlUnsafeName);
+        else
+            _snprintf_s(eb, _TRUNCATE, "Synchronization failed:\n%s", fs->Conn.LastError());
         SalamanderGeneral->SalMessageBox(parent, eb, LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
     }
     else if (!SftpIsCancelled())
@@ -4531,6 +4541,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
             if (!unsafeName)
             {
                 g_SkippedCount = 0;
+                g_DlUnsafeName[0] = 0;
                 step = SftpDownloadRecursive(Conn, src, tmpItem, isDirF != 0) &&
                        SftpUploadRecursive(*pTargetConn, tmpItem, dst, isDirF != 0);
                 LocalDeleteRecursive(tmpItem, isDirF != 0); // cleanup temp
@@ -4545,6 +4556,8 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                 char eb[700];
                 if (unsafeName)
                     _snprintf_s(eb, _TRUNCATE, "Unsafe file name from server: \"%s\"\n\nContinue?", ff->Name);
+                else if (g_DlUnsafeName[0] != 0)
+                    _snprintf_s(eb, _TRUNCATE, "Error copying \"%s\":\nUnsafe file name from server: \"%s\"\n\nContinue?", ff->Name, g_DlUnsafeName);
                 else
                     _snprintf_s(eb, _TRUNCATE, "Error copying \"%s\":\n%s\n\nContinue?", ff->Name, pTargetConn->LastError());
                 if (SalamanderGeneral->SalMessageBox(parent, eb, LoadStr(IDS_PLUGINNAME), MB_YESNO | MB_ICONEXCLAMATION) == IDNO)
