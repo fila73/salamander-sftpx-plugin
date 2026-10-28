@@ -183,6 +183,35 @@ void SftpParent(const char* path, char* out, int outSize)
         *slash = 0;
 }
 
+// Typed-path rule: a remote path part that STARTS with '\' is a Windows-style typed path (e.g.
+// "sftp:\\host\home\u"), so all its '\' become '/'; otherwise '\' is a literal name character
+// (panel-generated paths always start with '/').
+void SftpFixTypedPath(char* path)
+{
+    if (path == NULL || path[0] != '\\')
+        return;
+    for (char* s = path; *s; s++)
+        if (*s == '\\')
+            *s = '/';
+}
+
+// "//user@host/path" (either slash kind) -> path part after the host, typed-path rule applied;
+// input without host prefix is treated as the path part. Empty path after host -> "/".
+void SftpRemotePart(const char* userPart, char* out, int outSize)
+{
+    const char* p = (userPart != NULL) ? userPart : "";
+    if ((p[0] == '/' || p[0] == '\\') && (p[1] == '/' || p[1] == '\\'))
+    {
+        p += 2;
+        while (*p != 0 && *p != '/' && *p != '\\')
+            p++;
+        if (*p == 0)
+            p = "/";
+    }
+    lstrcpyn(out, p, outSize);
+    SftpFixTypedPath(out);
+}
+
 bool SftpIsSamePath(const char* a, const char* b)
 {
     char na[MAX_PATH], nb[MAX_PATH];

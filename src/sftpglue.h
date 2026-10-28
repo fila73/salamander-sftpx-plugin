@@ -77,6 +77,8 @@ void SftpJoin(const char* base, const char* name, char* out, int outSize); // US
 // (out = "") for empty, ".", "..", names containing "/" and too long results. Callers must skip the entry.
 bool SftpJoinName(const char* base, const char* name, char* out, int outSize);
 void SftpParent(const char* path, char* out, int outSize); // up-dir
+void SftpFixTypedPath(char* path); // path starting with backslash = Windows-style typed path: backslash -> '/'; else literal
+void SftpRemotePart(const char* userPart, char* out, int outSize); // strip //host, apply the rule above
 bool SftpIsSamePath(const char* a, const char* b);
 bool SftpIsRoot(const char* path);
 

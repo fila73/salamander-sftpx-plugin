@@ -2371,22 +2371,6 @@ static void SftpHostPrefix(const CSftpProfile& prof, char* out, int outSize)
         _snprintf_s(out, outSize, _TRUNCATE, "//%s%s", prof.Host, portpart);
 }
 
-// from "//user@host/path" returns pointer to start of remote path (after host); otherwise returns input
-static const char* SftpStripHost(const char* userPart)
-{
-    if (userPart == NULL)
-        return "";
-    if ((userPart[0] == '/' || userPart[0] == '\\') &&
-        (userPart[1] == '/' || userPart[1] == '\\'))
-    {
-        const char* p = userPart + 2;
-        while (*p != 0 && *p != '/' && *p != '\\')
-            p++;
-        return (*p != 0) ? p : "/";
-    }
-    return userPart;
-}
-
 // if "//user@host[:port]/..." contains a different host than current profile, update profile
 // and force new connection (allows entering sftp://user@host/ directly in address bar)
 static void SftpParseHostInto(CSftpProfile& prof, CSftpConnection& conn, const char* userPart)
@@ -2470,7 +2454,8 @@ BOOL WINAPI
 CPluginFSInterface::GetFullFSPath(HWND parent, const char* fsName, char* path, int pathSize, BOOL& success)
 {
     // 'path' is relative or absolute user-part; join with current path and prepend "fsName://host"
-    const char* up = SftpStripHost(path);
+    char up[MAX_PATH];
+    SftpRemotePart(path, up, MAX_PATH);
     char full[MAX_PATH];
     if (up[0] == '/')
         lstrcpyn(full, up, MAX_PATH);
@@ -2493,7 +2478,9 @@ CPluginFSInterface::IsCurrentPath(int currentFSNameIndex, int fsNameIndex, const
 {
     if (userPart == NULL)
         userPart = "";
-    return currentFSNameIndex == fsNameIndex && SftpIsSamePath(Path, SftpStripHost(userPart));
+    char up[MAX_PATH];
+    SftpRemotePart(userPart, up, MAX_PATH);
+    return currentFSNameIndex == fsNameIndex && SftpIsSamePath(Path, up);
 }
 
 BOOL WINAPI
@@ -2553,7 +2540,7 @@ CPluginFSInterface::ChangePath(int currentFSNameIndex, char* fsName, int fsNameI
     if (*userPart == 0 && ConnectData.UseConnectData) // data z Connect dialogu
         lstrcpyn(path, ConnectData.UserPart, MAX_PATH);
     else
-        lstrcpyn(path, SftpStripHost(userPart), MAX_PATH);
+        SftpRemotePart(userPart, path, MAX_PATH);
 
     if (path[0] == 0)
     {
@@ -3072,8 +3059,8 @@ CPluginFSInterface::GetNextDirectoryLineHotPath(const char* text, int pathLen, i
             root += 2; // skip "//"
         while (root < end && *root != '/' && *root != '\\')
             root++; // skip "user@host[:port]"
-        if (root < end && (*root == '/' || *root == '\\'))
-            root++; // skip the leading slash of the remote path
+        if (root < end && *root == '/')
+            root++; // skip the leading slash of the remote path (remote part: '\\' is a literal char)
     }
 
     const char* s = text + offset;
@@ -3083,9 +3070,9 @@ CPluginFSInterface::GetNextDirectoryLineHotPath(const char* text, int pathLen, i
         offset = (int)(root - text);
     else
     {
-        if (*s == '/' || *s == '\\')
+        if (*s == '/')
             s++;
-        while (s < end && *s != '/' && *s != '\\')
+        while (s < end && *s != '/')
             s++;
         offset = (int)(s - text);
     }
@@ -3103,13 +3090,13 @@ CPluginFSInterface::GetPathForMainWindowTitle(const char* fsName, int mode, char
     if (mode == 1) // "Directory Name Only"
     {
         char dirName[MAX_PATH] = "/";
-        if (Path[0] != 0 && !(Path[0] == '/' && Path[1] == 0) && !(Path[0] == '\\' && Path[1] == 0))
+        if (Path[0] != 0 && !(Path[0] == '/' && Path[1] == 0))
         {
             const char* p = Path + strlen(Path);
-            while (p > Path && (*(p - 1) == '/' || *(p - 1) == '\\'))
+            while (p > Path && *(p - 1) == '/')
                 p--;
             const char* end = p;
-            while (p > Path && *(p - 1) != '/' && *(p - 1) != '\\')
+            while (p > Path && *(p - 1) != '/')
                 p--;
             int len = (int)(end - p);
             if (len > 0)
@@ -3131,7 +3118,7 @@ CPluginFSInterface::GetPathForMainWindowTitle(const char* fsName, int mode, char
     {
         char prefix[320];
         SftpHostPrefix(Profile, prefix, sizeof(prefix));
-        if (Path[0] == 0 || (Path[0] == '/' && Path[1] == 0) || (Path[0] == '\\' && Path[1] == 0))
+        if (Path[0] == 0 || (Path[0] == '/' && Path[1] == 0))
         {
             if (connName[0] != 0)
                 _snprintf_s(buf, bufSize, _TRUNCATE, "[%s] %s:%s/", connName, fsName, prefix);
@@ -3140,10 +3127,10 @@ CPluginFSInterface::GetPathForMainWindowTitle(const char* fsName, int mode, char
             return TRUE;
         }
         const char* p = Path + strlen(Path);
-        while (p > Path && (*(p - 1) == '/' || *(p - 1) == '\\'))
+        while (p > Path && *(p - 1) == '/')
             p--;
         const char* end = p;
-        while (p > Path && *(p - 1) != '/' && *(p - 1) != '\\')
+        while (p > Path && *(p - 1) != '/')
             p--;
         // if root or only one level deep, return full path
         if (p <= Path + 1)
@@ -3253,7 +3240,9 @@ CPluginFSInterface::AcceptChangeOnPathNotification(const char* fsName, const cha
     else if (path[0] != '/')
         return; // disk or foreign path -> not relevant to us
 
-    userPart = SftpStripHost(userPart); // trim optional //host prefix
+    char userPartBuf[MAX_PATH];
+    SftpRemotePart(userPart, userPartBuf, MAX_PATH); // trim optional //host prefix
+    userPart = userPartBuf;
 
     // refresh panel when change affects our current path (or its subtree)
     if (SftpIsSamePath(userPart, Path) ||
@@ -3711,6 +3700,14 @@ void SftpEditFile(HWND parent, CPluginFSInterface* fs, const char* remoteDir, co
     DeleteFile(tmpFile);
 }
 
+// A listing name that cannot be one path component was rejected: tell the user, never act on it.
+static void SftpReportUnsafeName(HWND parent, const char* name)
+{
+    char eb[700];
+    _snprintf_s(eb, _TRUNCATE, "Unsafe file name from server: \"%s\"\nThe item was not processed.", name);
+    SalamanderGeneral->SalMessageBox(parent, eb, LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
+}
+
 // Calculate size of selected items on server.
 void SftpCalcSize(HWND parent, CPluginFSInterface* fs, const char* remoteDir, int panel)
 {
@@ -3746,6 +3743,7 @@ void SftpCalcSize(HWND parent, CPluginFSInterface* fs, const char* remoteDir, in
         progDlg = NULL;
     }
 
+    int skippedUnsafe = 0;
     while (!cancelled)
     {
         if (progDlg != NULL && progDlg->GetWantCancel())
@@ -3763,6 +3761,7 @@ void SftpCalcSize(HWND parent, CPluginFSInterface* fs, const char* remoteDir, in
             char remote[MAX_PATH];
             if (!SftpJoinName(remoteDir, f->Name, remote, MAX_PATH))
             {
+                skippedUnsafe++; // reported with the result below
                 if (focused)
                     break;
                 continue; // unsafe name from server listing
@@ -3838,6 +3837,12 @@ void SftpCalcSize(HWND parent, CPluginFSInterface* fs, const char* remoteDir, in
         _snprintf_s(info, _TRUNCATE,
                     "Size: %I64u bytes (%.2f MB)\nFiles: %d\nDirectories: %d",
                     total, total / 1048576.0, files, dirs);
+        if (skippedUnsafe > 0)
+        {
+            size_t il = strlen(info);
+            _snprintf_s(info + il, sizeof(info) - il, _TRUNCATE,
+                        "\n\nSkipped %d item(s) with unsafe names from server.", skippedUnsafe);
+        }
         SalamanderGeneral->SalMessageBox(parent, info, "Size on server", MB_OK | MB_ICONINFORMATION);
     }
 }
@@ -4392,9 +4397,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
             lstrcpynA(remoteTargetDir, p, sizeof(remoteTargetDir));
         }
 
-        for (char* s = remoteTargetDir; *s; s++)
-            if (*s == '\\')
-                *s = '/';
+        SftpFixTypedPath(remoteTargetDir); // only a leading '\\' makes it a typed Windows path
         SftpNormalize(remoteTargetDir);
 
         bool isSameServer = true;
@@ -4499,7 +4502,8 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                 break;
             char src[MAX_PATH], dst[MAX_PATH], tmpItem[2 * MAX_PATH];
             BOOL step = FALSE;
-            if (SftpJoinName(Path, ff->Name, src, MAX_PATH) && SftpJoinName(remoteTargetDir, ff->Name, dst, MAX_PATH))
+            BOOL unsafeName = !(SftpJoinName(Path, ff->Name, src, MAX_PATH) && SftpJoinName(remoteTargetDir, ff->Name, dst, MAX_PATH));
+            if (!unsafeName)
             {
                 lstrcpyn(tmpItem, tmpDir, 2 * MAX_PATH);
                 SalamanderGeneral->SalPathAppend(tmpItem, ff->Name, 2 * MAX_PATH);
@@ -4516,7 +4520,10 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                     break;
                 }
                 char eb[700];
-                _snprintf_s(eb, _TRUNCATE, "Error copying \"%s\":\n%s\n\nContinue?", ff->Name, pTargetConn->LastError());
+                if (unsafeName)
+                    _snprintf_s(eb, _TRUNCATE, "Unsafe file name from server: \"%s\"\n\nContinue?", ff->Name);
+                else
+                    _snprintf_s(eb, _TRUNCATE, "Error copying \"%s\":\n%s\n\nContinue?", ff->Name, pTargetConn->LastError());
                 if (SalamanderGeneral->SalMessageBox(parent, eb, LoadStr(IDS_PLUGINNAME), MB_YESNO | MB_ICONEXCLAMATION) == IDNO)
                 {
                     okF = FALSE;
@@ -4593,6 +4600,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
     dlg->SetOperationInfo(false, Path, target, totalFiles, 0, connName);
     dlg->SetNotifyPaths(target, Path, !copy);
 
+    BOOL nameRejected = FALSE;
     while (1)
     {
         f = focused ? SalamanderGeneral->GetPanelFocusedItem(panel, &isDir)
@@ -4603,6 +4611,8 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
         char remote[MAX_PATH], local[2 * MAX_PATH];
         if (!SftpJoinName(Path, f->Name, remote, MAX_PATH))
         {
+            SftpReportUnsafeName(parent, f->Name);
+            nameRejected = TRUE; // reported as failed below, so Move does not claim success
             if (focused)
                 break;
             continue; // unsafe name from server listing: never enqueue it
@@ -4633,10 +4643,12 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
     {
         // drag&drop: the drop target (e.g. another FS plugin staging via %TEMP%) takes the files
         // as soon as we return, so the download must be complete by then
-        cancelOrHandlePath = SftpRunWorkerSync(worker, dlg, Profile, parent);
+        cancelOrHandlePath = SftpRunWorkerSync(worker, dlg, Profile, parent) || nameRejected;
         return TRUE;
     }
     SftpStartAndAttach(worker, dlg, Profile);
+    if (nameRejected)
+        cancelOrHandlePath = TRUE;
     return TRUE;
 }
 
@@ -4652,7 +4664,10 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
     if (mode == 1)
     {
         // add mask *.* to target path (Salamander will show standard dialog)
-        SalamanderGeneral->SalPathAppend(targetPath, "*.*", 2 * MAX_PATH);
+        // append with '/' (not SalPathAppend's '\\'): a remote name may contain a literal backslash
+        size_t tl = strlen(targetPath);
+        if (tl + 5 < 2 * MAX_PATH)
+            strcpy(targetPath + tl, (tl > 0 && targetPath[tl - 1] == '/') ? "*.*" : "/*.*");
         return TRUE;
     }
 
@@ -4699,10 +4714,7 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
     }
 
     char remoteDir[MAX_PATH];
-    lstrcpyn(remoteDir, SftpStripHost(userPart), MAX_PATH);
-    for (char* p = remoteDir; *p; p++)
-        if (*p == '\\')
-            *p = '/';
+    SftpRemotePart(userPart, remoteDir, MAX_PATH);
     {
         char* lastSlash = strrchr(remoteDir, '/');
         char* comp = (lastSlash != NULL) ? lastSlash + 1 : remoteDir;
@@ -4834,6 +4846,7 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
     }
     dlg->SetNotifyPaths(fsfull, sourcePath, !copy);
 
+    BOOL nameRejected = FALSE;
     while ((name = next(NULL, 0, &dosName, &isDir, &size, &attr, &lastWrite, nextParam, NULL)) != NULL)
     {
         char local[2 * MAX_PATH];
@@ -4844,7 +4857,11 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
         base = (base != NULL) ? base + 1 : name;
         char remote[MAX_PATH];
         if (!SftpJoinName(remoteDir, base, remote, MAX_PATH))
+        {
+            SftpReportUnsafeName(parent, base);
+            nameRejected = TRUE; // reported as failed below, so Move does not claim success
             continue; // local name that cannot be a single remote component
+        }
 
         CSftpTransferTask task;
         task.TaskType = CSftpTransferTask::TaskUpload;
@@ -4863,12 +4880,14 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
         dlg->SetFS(this);
         RegisterTransferDlg(dlg);
         SftpStartAndAttach(worker, dlg, Profile);
+        if (nameRejected && invalidPathOrCancel != NULL)
+            *invalidPathOrCancel = TRUE;
         return TRUE;
     }
 
     // Synchronous: Salamander deletes temp sources / closes this FS right after we return, so the
     // dialog must not know the FS (no SetFS / RegisterTransferDlg) and we wait for the worker.
-    BOOL failed = SftpRunWorkerSync(worker, dlg, Profile, parent);
+    BOOL failed = SftpRunWorkerSync(worker, dlg, Profile, parent) || nameRejected;
     if (invalidPathOrCancel != NULL)
         *invalidPathOrCancel = failed;
     return TRUE;

@@ -11,6 +11,19 @@
 #include <openssl/crypto.h>
 #endif
 
+// Explicit error text for a rejected name (the connection's LastError() would be stale); worker thread only.
+static thread_local std::string g_UnsafeNameMsg;
+
+static void SftpSetUnsafeName(const char* name)
+{
+    g_UnsafeNameMsg = std::string("Unsafe file name from server: \"") + (name != NULL ? name : "") + "\"";
+}
+
+static const char* SftpTaskErrorText(const char* connError)
+{
+    return g_UnsafeNameMsg.empty() ? connError : g_UnsafeNameMsg.c_str();
+}
+
 static void SftpSplitPathAndName(const char* fullPath, char separator, std::string& outDir, std::string& outName)
 {
     if (fullPath == NULL || fullPath[0] == 0)
@@ -467,7 +480,7 @@ void CSftpTransferWorker::ThreadLoop()
             else
             {
                 AllTasks[taskIdx].Status = CSftpTransferTask::StatusError;
-                AllTasks[taskIdx].ErrorMsg = WorkerConn.LastError();
+                AllTasks[taskIdx].ErrorMsg = SftpTaskErrorText(WorkerConn.LastError());
             }
         }
         LeaveCriticalSection(&QueueLock);
@@ -493,7 +506,7 @@ void CSftpTransferWorker::ThreadLoop()
                 break;
             }
             State.HasError = true;
-            strncpy_s(State.ErrorMsg, WorkerConn.LastError(), _TRUNCATE);
+            strncpy_s(State.ErrorMsg, SftpTaskErrorText(WorkerConn.LastError()), _TRUNCATE);
             LeaveCriticalSection(&State.Lock);
             break;
         }
@@ -517,6 +530,7 @@ void CSftpTransferWorker::ThreadLoop()
 bool CSftpTransferWorker::ExecuteTask(CSftpTransferTask& task)
 {
     bool ok = false;
+    g_UnsafeNameMsg.clear();
     if (task.TaskType == CSftpTransferTask::TaskDownload)
     {
         // Move: source items are deleted one by one inside the recursive function,
@@ -627,6 +641,7 @@ bool CSftpTransferWorker::DoDownloadRecursive(const std::string& remote, const s
             !SftpJoinName(remote.c_str(), entries[i].Name.c_str(), r, MAX_PATH))
         {
             SftpTraceLog("DoDownloadRecursive: unsafe remote name rejected in %s", remote.c_str());
+            SftpSetUnsafeName(entries[i].Name.c_str());
             return false; // never act on a name that could escape the directory
         }
         lstrcpynA(l, local.c_str(), MAX_PATH);
@@ -779,6 +794,7 @@ bool CSftpTransferWorker::DoUploadRecursive(const std::string& local, const std:
         PathAppendA(l, fd.cFileName);
         if (!SftpJoinName(remote.c_str(), fd.cFileName, r, MAX_PATH))
         {
+            SftpSetUnsafeName(fd.cFileName);
             ok = false; // local name that cannot be a single remote component
             break;
         }

@@ -73,6 +73,34 @@ int main()
     SftpJoin("/", "..", out, MAX_PATH);
     CheckStr("user join / ..", out, "/");
 
+    // truncation: result longer than outSize -> false, out ""
+    {
+        char tiny[8];
+        memset(tiny, 'x', sizeof(tiny));
+        bool ok = SftpJoinName("/home/user", "file.txt", tiny, (int)sizeof(tiny));
+        if (ok || tiny[0] != 0)
+        {
+            printf("FAIL truncation: ok=%d out=\"%s\"\n", ok, tiny);
+            g_fail++;
+        }
+    }
+
+    // typed-path rule: remote part starting with '\' is Windows-style, otherwise '\' is literal
+    SftpRemotePart("\\\\host\\home\\u", out, MAX_PATH);
+    CheckStr("remote part \\\\host\\home\\u", out, "/home/u");
+    SftpRemotePart("//user@host/home/u", out, MAX_PATH);
+    CheckStr("remote part //user@host/home/u", out, "/home/u");
+    SftpRemotePart("//host", out, MAX_PATH);
+    CheckStr("remote part //host", out, "/");
+    SftpRemotePart("//host/a\\b", out, MAX_PATH);
+    CheckStr("remote part /a\\b stays", out, "/a\\b");
+    SftpRemotePart("/home/u/..\\..\\etc", out, MAX_PATH);
+    CheckStr("remote part literal ..\\..\\etc stays", out, "/home/u/..\\..\\etc");
+    SftpRemotePart("sub\\dir", out, MAX_PATH);
+    CheckStr("remote part relative sub\\dir stays", out, "sub\\dir");
+    SftpRemotePart("\\home\\u", out, MAX_PATH);
+    CheckStr("remote part \\home\\u (no host)", out, "/home/u");
+
     printf(g_fail ? "\n%d FAILED\n" : "\nall passed\n", g_fail);
     return g_fail ? 1 : 0;
 }
