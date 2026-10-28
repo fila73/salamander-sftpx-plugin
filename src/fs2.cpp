@@ -3408,6 +3408,19 @@ static bool SftpDownloadRecursive(CSftpConnection& conn, const char* remote, con
 }
 
 // recursive upload of file/directory from disk to SFTP
+// True only for junctions and symlinks (reparse tags MOUNT_POINT/SYMLINK); other reparse points
+// (cloud placeholders, dedup) are ordinary content and are traversed normally.
+static bool IsLinkReparsePoint(const char* path)
+{
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(path, &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return false;
+    FindClose(h);
+    return (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
+           (fd.dwReserved0 == IO_REPARSE_TAG_MOUNT_POINT || fd.dwReserved0 == IO_REPARSE_TAG_SYMLINK);
+}
+
 static bool SftpUploadRecursive(CSftpConnection& conn, const char* local, const char* remote, bool isDir)
 {
     if (SftpIsCancelled())
@@ -3462,8 +3475,7 @@ static bool SftpUploadRecursive(CSftpConnection& conn, const char* local, const 
         return false;
     // never follow junctions/symlinks (data outside the selection, possible loops)
     {
-        DWORD la = GetFileAttributes(local);
-        if (la != INVALID_FILE_ATTRIBUTES && (la & FILE_ATTRIBUTE_REPARSE_POINT))
+        if (IsLinkReparsePoint(local))
         {
             g_SkippedCount++; // not transferred - source must not be deleted by Move
             return true;

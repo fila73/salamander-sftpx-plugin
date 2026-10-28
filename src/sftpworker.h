@@ -168,6 +168,7 @@ private:
     bool Initialized;
 
     // Overwrite decision handling in worker
+    std::string SkippedLinkPath;  // first junction/symlink directory of the current task that was skipped
     std::string DeleteFailedPath; // first source file of the current task that Move could not delete
     int OverwriteAllDecision; // -1 = ask, 0 = skip all, 1 = overwrite all, 2 = resume all, 3 = resume or overwrite all
     int AskOverwriteWorker(const char* srcPath, const char* srcName,

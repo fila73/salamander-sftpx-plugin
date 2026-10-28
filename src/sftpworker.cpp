@@ -418,12 +418,15 @@ void CSftpTransferWorker::ThreadLoop()
             PostMessage(DlgHwnd, WM_APP_SFTP_WORKER_UPDATE, 0, 0);
 
         DeleteFailedPath.clear();
+        SkippedLinkPath.clear();
         bool success = ExecuteTask(currentTask);
 
         // Move: transfer succeeded but a source file could not be removed - report it
         std::string deleteErr;
         if (success && !DeleteFailedPath.empty())
             deleteErr = "Could not delete source: " + DeleteFailedPath;
+        else if (success && !SkippedLinkPath.empty())
+            deleteErr = "Skipped link: " + SkippedLinkPath; // not transferred, source kept
 
         EnterCriticalSection(&QueueLock);
         if (taskIdx != (size_t)-1 && taskIdx < AllTasks.size())
@@ -609,6 +612,19 @@ bool CSftpTransferWorker::DoDownloadRecursive(const std::string& remote, const s
     return true;
 }
 
+// True only for junctions and symlinks (reparse tags MOUNT_POINT/SYMLINK); other reparse points
+// (cloud placeholders, dedup) are ordinary content and are traversed normally.
+static bool IsLinkReparsePoint(const char* path)
+{
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(path, &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return false;
+    FindClose(h);
+    return (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
+           (fd.dwReserved0 == IO_REPARSE_TAG_MOUNT_POINT || fd.dwReserved0 == IO_REPARSE_TAG_SYMLINK);
+}
+
 bool CSftpTransferWorker::DoUploadRecursive(const std::string& local, const std::string& remote, bool isDir, bool deleteSource)
 {
     {
@@ -693,9 +709,12 @@ bool CSftpTransferWorker::DoUploadRecursive(const std::string& local, const std:
     // (Move would delete foreign data, a link to an ancestor would loop forever).
     // The link stays on disk, so a Move keeps the parent directory too.
     {
-        DWORD la = GetFileAttributesA(local.c_str());
-        if (la != INVALID_FILE_ATTRIBUTES && (la & FILE_ATTRIBUTE_REPARSE_POINT))
+        if (IsLinkReparsePoint(local.c_str()))
+        {
+            if (SkippedLinkPath.empty())
+                SkippedLinkPath = local;
             return true;
+        }
     }
 
     // Recursive directory upload
