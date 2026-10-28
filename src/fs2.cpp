@@ -4451,6 +4451,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
         }
 
         CSftpProfile targetProfile;
+        memset(&targetProfile, 0, sizeof(targetProfile)); // no constructor: Host[0]/Password/KeyFile must start empty
         CSftpConnection* pTargetConn = NULL;
         CSftpConnection localTargetConn;
         char targetConnName[128] = "";
