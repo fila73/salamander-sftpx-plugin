@@ -827,12 +827,9 @@ static int SftpStartAndAttach(CSftpTransferWorker* worker, CSftpTransferProgress
         return -1;
     }
     dlg->AttachWorker(worker, true);
-    if (started)
-    {
-        PostMessage(hDlg, WM_APP_SFTP_WORKER_UPDATE, 0, 0);
-        if (!worker->IsRunning())
-            PostMessage(hDlg, WM_APP_SFTP_WORKER_FINISHED, 0, 0);
-    }
+    PostMessage(hDlg, WM_APP_SFTP_WORKER_UPDATE, 0, 0);
+    if (!started || !worker->IsRunning()) // a failed Start leaves the dialog waiting otherwise
+        PostMessage(hDlg, WM_APP_SFTP_WORKER_FINISHED, 0, 0);
     return started ? 1 : 0;
 }
 
@@ -4819,7 +4816,16 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
     std::shared_ptr<CSftpWorkerCompletion> done = std::make_shared<CSftpWorkerCompletion>();
     worker->SetCompletion(done);
     dlg->SetSyncWait();
-    if (done->Event == NULL || SftpStartAndAttach(worker, dlg, Profile) != 1)
+    if (done->Event == NULL)
+    {
+        // never started: the dialog still needs the worker and a finish to become closable
+        dlg->AttachWorker(worker, true);
+        PostMessage(dlg->HWindow, WM_APP_SFTP_WORKER_FINISHED, 0, 0);
+        if (invalidPathOrCancel != NULL)
+            *invalidPathOrCancel = TRUE;
+        return TRUE;
+    }
+    if (SftpStartAndAttach(worker, dlg, Profile) != 1)
     {
         if (invalidPathOrCancel != NULL)
             *invalidPathOrCancel = TRUE;
