@@ -417,12 +417,23 @@ void CSftpTransferWorker::ThreadLoop()
         if (DlgHwnd)
             PostMessage(DlgHwnd, WM_APP_SFTP_WORKER_UPDATE, 0, 0);
 
+        DeleteFailedPath.clear();
         bool success = ExecuteTask(currentTask);
+
+        // Move: transfer succeeded but a source file could not be removed - report it
+        std::string deleteErr;
+        if (success && !DeleteFailedPath.empty())
+            deleteErr = "Could not delete source: " + DeleteFailedPath;
 
         EnterCriticalSection(&QueueLock);
         if (taskIdx != (size_t)-1 && taskIdx < AllTasks.size())
         {
-            if (success)
+            if (success && !deleteErr.empty())
+            {
+                AllTasks[taskIdx].Status = CSftpTransferTask::StatusError;
+                AllTasks[taskIdx].ErrorMsg = deleteErr;
+            }
+            else if (success)
                 AllTasks[taskIdx].Status = CSftpTransferTask::StatusDone;
             else if (State.Cancelled)
                 AllTasks[taskIdx].Status = CSftpTransferTask::StatusSkipped;
@@ -436,6 +447,15 @@ void CSftpTransferWorker::ThreadLoop()
 
         if (DlgHwnd)
             PostMessage(DlgHwnd, WM_APP_SFTP_WORKER_UPDATE, 0, 0);
+
+        if (!deleteErr.empty())
+        {
+            // not fatal for the queue: remember the message and continue
+            EnterCriticalSection(&State.Lock);
+            State.HasError = true;
+            strncpy_s(State.ErrorMsg, deleteErr.c_str(), _TRUNCATE);
+            LeaveCriticalSection(&State.Lock);
+        }
 
         if (!success)
         {
@@ -553,8 +573,8 @@ bool CSftpTransferWorker::DoDownloadRecursive(const std::string& remote, const s
         if (!WorkerConn.Download(actRemote.c_str(), actLocal.c_str(), resumeOffset))
             return false;
         // Transferred successfully - delete the source file (move)
-        if (deleteSource)
-            WorkerConn.RemoveFile(actRemote.c_str());
+        if (deleteSource && !WorkerConn.RemoveFile(actRemote.c_str()) && DeleteFailedPath.empty())
+            DeleteFailedPath = actRemote;
         return true;
     }
 
@@ -664,8 +684,8 @@ bool CSftpTransferWorker::DoUploadRecursive(const std::string& local, const std:
         if (!WorkerConn.Upload(actLocal.c_str(), actRemote.c_str(), resumeOffset))
             return false;
         // Transferred successfully - delete the source file (move)
-        if (deleteSource)
-            DeleteFileA(actLocal.c_str());
+        if (deleteSource && !DeleteFileA(actLocal.c_str()) && DeleteFailedPath.empty())
+            DeleteFailedPath = actLocal;
         return true;
     }
 
