@@ -1,278 +1,169 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
-    <ProjectConfiguration Include="Debug|Win32">
-      <Configuration>Debug</Configuration>
-      <Platform>Win32</Platform>
-    </ProjectConfiguration>
     <ProjectConfiguration Include="Debug|x64">
       <Configuration>Debug</Configuration>
       <Platform>x64</Platform>
-    </ProjectConfiguration>
-    <ProjectConfiguration Include="Release|Win32">
-      <Configuration>Release</Configuration>
-      <Platform>Win32</Platform>
-    </ProjectConfiguration>
-    <ProjectConfiguration Include="Release clean|Win32">
-      <Configuration>Release clean</Configuration>
-      <Platform>Win32</Platform>
     </ProjectConfiguration>
     <ProjectConfiguration Include="Release|x64">
       <Configuration>Release</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
-    <ProjectConfiguration Include="Release clean|x64">
-      <Configuration>Release clean</Configuration>
-      <Platform>x64</Platform>
-    </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <VCProjectVersion>16.0</VCProjectVersion>
+    <VCProjectVersion>17.0</VCProjectVersion>
     <ProjectGuid>{514DA5DF-C9D5-4A39-9BE6-CBCFA6CE0D5A}</ProjectGuid>
     <RootNamespace>sftp</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props">
-  </Import>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32' Or '$(Configuration)|$(Platform)'=='Release clean|Win32'" Label="Configuration">
-    <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>$(DefaultPlatformToolset)</PlatformToolset>
+    <CharacterSet>NotSet</CharacterSet>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration">
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
-    <ConfigurationType>DynamicLibrary</ConfigurationType>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64' Or '$(Configuration)|$(Platform)'=='Release clean|x64'" Label="Configuration">
+  <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
-    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
-    <ConfigurationType>DynamicLibrary</ConfigurationType>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="sftp_common.props" />
+  </ImportGroup>
+  <PropertyGroup>
+    <OutDir>$(SftpOutDir)</OutDir>
+    <IntDir>$(SftpOutDir)obj\sftp\</IntDir>
+    <TargetName>sftp</TargetName>
+    <TargetExt>.spl</TargetExt>
+    <IgnoreImportLibrary>true</IgnoreImportLibrary>
+    <LinkIncremental>false</LinkIncremental>
+    <!-- import library for Salamander's libcrypto-3-x64.dll, generated from the .def below -->
+    <LibcryptoDef>$(SftpRootDir)libcrypto-3-x64.def</LibcryptoDef>
+    <LibcryptoImportLib>$(IntDir)libcrypto-3-x64.lib</LibcryptoImportLib>
   </PropertyGroup>
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props">
-  </Import>
-  <ImportGroup Label="ExtensionSettings">
-  </ImportGroup>
-  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32' Or '$(Configuration)|$(Platform)'=='Release clean|Win32'" Label="PropertySheets">
-    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform">
-    </Import>
-    <Import Project="..\..\..\shared\vcxproj\x86.props">
-    </Import>
-    <Import Project="..\..\..\shared\vcxproj\plugin_base.props">
-    </Import>
-    <Import Project="..\..\..\shared\vcxproj\plugin_release.props">
-    </Import>
-    <Import Project="sftp.props">
-    </Import>
-  </ImportGroup>
-  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="PropertySheets">
-    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform">
-    </Import>
-    <Import Project="..\..\..\shared\vcxproj\x86.props">
-    </Import>
-    <Import Project="..\..\..\shared\vcxproj\plugin_base.props">
-    </Import>
-    <Import Project="..\..\..\shared\vcxproj\plugin_debug.props">
-    </Import>
-    <Import Project="sftp.props">
-    </Import>
-  </ImportGroup>
-  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64' Or '$(Configuration)|$(Platform)'=='Release clean|x64'" Label="PropertySheets">
-    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform">
-    </Import>
-    <Import Project="..\..\..\shared\vcxproj\x64.props">
-    </Import>
-    <Import Project="..\..\..\shared\vcxproj\plugin_base.props">
-    </Import>
-    <Import Project="..\..\..\shared\vcxproj\plugin_release.props">
-    </Import>
-    <Import Project="sftp.props">
-    </Import>
-  </ImportGroup>
-  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
-    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform">
-    </Import>
-    <Import Project="..\..\..\shared\vcxproj\x64.props">
-    </Import>
-    <Import Project="..\..\..\shared\vcxproj\plugin_base.props">
-    </Import>
-    <Import Project="..\..\..\shared\vcxproj\plugin_debug.props">
-    </Import>
-    <Import Project="sftp.props">
-    </Import>
-  </ImportGroup>
-  <PropertyGroup Label="UserMacros">
-  </PropertyGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+  <ItemDefinitionGroup>
     <ClCompile>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <!-- same flags as Makefile.mingw: static CRT (standalone .spl), UTF-8 source and execution charset -->
+      <AdditionalIncludeDirectories>$(SftpSrcDir);$(SftpSrcDir)lang;$(SftpSrcDir)libssh2\include;$(SalamanderSharedDir);$(SalamanderSdkDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32;_WIN32;_WIN64;_WINDOWS;_USRDLL;WINVER=0x0601;_WIN32_WINNT=0x0601;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;UNICODE_NOT_USED;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <WarningLevel>Level3</WarningLevel>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalOptions>/utf-8 /J %(AdditionalOptions)</AdditionalOptions>
+      <DisableSpecificWarnings>4996;4244;4267;4018;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <Link>
-      <BaseAddress>..\..\..\shared\baseaddr_$(ShortPlatform).txt,$(ProjectName)</BaseAddress>
+      <SubSystem>Windows</SubSystem>
+      <ModuleDefinitionFile>$(SftpSrcDir)sftp.def</ModuleDefinitionFile>
+      <AdditionalDependencies>$(LibcryptoImportLib);ws2_32.lib;shlwapi.lib;comctl32.lib;comdlg32.lib;ole32.lib;shell32.lib;gdi32.lib;user32.lib;msimg32.lib;uxtheme.lib;dwmapi.lib;bcrypt.lib;crypt32.lib;advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <RandomizedBaseAddress>true</RandomizedBaseAddress>
+      <TargetMachine>MachineX64</TargetMachine>
     </Link>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32' Or '$(Configuration)|$(Platform)'=='Release clean|Win32'">
-    <ClCompile>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
-    </ClCompile>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <ClCompile>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
-    </ClCompile>
-    <Link>
-      <BaseAddress>..\..\..\shared\baseaddr_$(ShortPlatform).txt,$(ProjectName)</BaseAddress>
-    </Link>
-  </ItemDefinitionGroup>
-  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64' Or '$(Configuration)|$(Platform)'=='Release clean|x64'">
-    <ClCompile>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
-    </ClCompile>
-  </ItemDefinitionGroup>
-  <ItemGroup>
-    <ClCompile Include="..\..\..\..\darkmode.cpp" />
-    <ClCompile Include="..\..\..\..\darkmode_backend_darkmodelib.cpp" />
-    <ClCompile Include="..\..\..\..\third_party\darkmodelib\src\Darkmodelib.cpp">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
-    <ClCompile Include="..\..\..\..\third_party\darkmodelib\src\DmlibColor.cpp">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
-    <ClCompile Include="..\..\..\..\third_party\darkmodelib\src\DmlibDpi.cpp">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
-    <ClCompile Include="..\..\..\..\third_party\darkmodelib\src\DmlibHook.cpp">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
-    <ClCompile Include="..\..\..\..\third_party\darkmodelib\src\DmlibPaintHelper.cpp">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
-    <ClCompile Include="..\..\..\..\third_party\darkmodelib\src\DmlibSubclass.cpp">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
-    <ClCompile Include="..\..\..\..\third_party\darkmodelib\src\DmlibSubclassControl.cpp">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
-    <ClCompile Include="..\..\..\..\third_party\darkmodelib\src\DmlibSubclassWindow.cpp">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
-    <ClCompile Include="..\..\..\..\third_party\darkmodelib\src\DmlibWinApi.cpp">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <PreprocessorDefinitions>UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
-    <ClCompile Include="..\sftpconn.cpp">
-      <PrecompiledHeader>NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\sftpglue.cpp">
-    </ClCompile>
-    <ClCompile Include="..\..\..\shared\auxtools.cpp">
-    </ClCompile>
-    <ClCompile Include="..\..\..\shared\dbg.cpp">
-    </ClCompile>
-    <ClCompile Include="..\..\..\shared\mhandles.cpp">
-    </ClCompile>
-    <ClCompile Include="..\..\..\shared\winliblt.cpp">
-    </ClCompile>
-    <ClCompile Include="..\archiver.cpp">
-    </ClCompile>
-    <ClCompile Include="..\sftp.cpp">
-    </ClCompile>
-    <ClCompile Include="..\dialogs.cpp">
-    </ClCompile>
-    <ClCompile Include="..\fs1.cpp">
-    </ClCompile>
-    <ClCompile Include="..\fs2.cpp">
-    </ClCompile>
-    <ClCompile Include="..\menu.cpp">
-    </ClCompile>
-    <ClCompile Include="..\precomp.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32' Or '$(Configuration)|$(Platform)'=='Release clean|Win32'">Create</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64' Or '$(Configuration)|$(Platform)'=='Release clean|x64'">Create</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\thumbldr.cpp">
-    </ClCompile>
-    <ClCompile Include="..\viewer.cpp">
-    </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="..\..\..\shared\arraylt.h">
-    </ClInclude>
-    <ClInclude Include="..\..\..\shared\auxtools.h">
-    </ClInclude>
-    <ClInclude Include="..\..\..\shared\dbg.h">
-    </ClInclude>
-    <ClInclude Include="..\..\..\shared\mhandles.h">
-    </ClInclude>
-    <ClInclude Include="..\..\..\shared\spl_arc.h">
-    </ClInclude>
-    <ClInclude Include="..\..\..\shared\spl_base.h">
-    </ClInclude>
-    <ClInclude Include="..\..\..\shared\spl_com.h">
-    </ClInclude>
-    <ClInclude Include="..\..\..\shared\spl_fs.h">
-    </ClInclude>
-    <ClInclude Include="..\..\..\shared\spl_gen.h">
-    </ClInclude>
-    <ClInclude Include="..\..\..\shared\spl_gui.h">
-    </ClInclude>
-    <ClInclude Include="..\..\..\shared\spl_menu.h">
-    </ClInclude>
-    <ClInclude Include="..\..\..\shared\spl_thum.h">
-    </ClInclude>
-    <ClInclude Include="..\..\..\shared\spl_vers.h">
-    </ClInclude>
-    <ClInclude Include="..\..\..\shared\spl_view.h">
-    </ClInclude>
-    <ClInclude Include="..\..\..\shared\winliblt.h">
-    </ClInclude>
-    <ClInclude Include="..\sftp.h">
-    </ClInclude>
-    <ClInclude Include="..\dialogs.h">
-    </ClInclude>
-    <ClInclude Include="..\precomp.h">
-    </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="..\sftp.def">
-    </None>
-    <None Include="..\sftp.rc2">
-    </None>
-    <None Include="..\sftp.rh">
-    </None>
-    <None Include="..\sftp.rh2">
-    </None>
-    <None Include="..\lang\lang.rh">
-    </None>
-    <None Include="..\versinfo.rh2">
-    </None>
-  </ItemGroup>
-  <ItemGroup>
-    <ResourceCompile Include="..\sftp.rc">
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>$(SftpSrcDir);$(SftpSrcDir)lang;$(SalamanderSharedDir);$(SalamanderSdkDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WINVER=0x0601;_WIN64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <Culture>0x0409</Culture>
     </ResourceCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+    </Link>
+    <ResourceCompile>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\sftpconn.cpp" />
+    <ClCompile Include="..\sftpglue.cpp" />
+    <ClCompile Include="..\sftpworker.cpp" />
+    <ClCompile Include="..\sftpconflictdlg.cpp" />
+    <ClCompile Include="..\sftp.cpp" />
+    <ClCompile Include="..\dialogs.cpp" />
+    <ClCompile Include="..\fs1.cpp" />
+    <ClCompile Include="..\fs2.cpp" />
+    <ClCompile Include="..\menu.cpp" />
+    <ClCompile Include="..\archiver.cpp" />
+    <ClCompile Include="..\viewer.cpp" />
+    <ClCompile Include="..\thumbldr.cpp" />
+    <ClCompile Include="..\plugindarkmode.cpp" />
+    <ClCompile Include="$(SalamanderSharedDir)auxtools.cpp" />
+    <ClCompile Include="$(SalamanderSharedDir)dbg.cpp" />
+    <ClCompile Include="$(SalamanderSharedDir)mhandles.cpp" />
+    <ClCompile Include="$(SalamanderSharedDir)winliblt.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\libssh2\agent.c;..\libssh2\bcrypt_pbkdf.c;..\libssh2\chacha.c;..\libssh2\channel.c;..\libssh2\cipher-chachapoly.c;..\libssh2\comp.c;..\libssh2\crypt.c;..\libssh2\global.c;..\libssh2\hostkey.c;..\libssh2\keepalive.c;..\libssh2\kex.c;..\libssh2\knownhost.c;..\libssh2\mac.c;..\libssh2\misc.c;..\libssh2\openssl.c;..\libssh2\packet.c;..\libssh2\pem.c;..\libssh2\poly1305.c;..\libssh2\publickey.c;..\libssh2\scp.c;..\libssh2\session.c;..\libssh2\sftp.c;..\libssh2\transport.c;..\libssh2\userauth.c;..\libssh2\userauth_kbd_packet.c;..\libssh2\version.c">
+      <!-- libssh2 (OpenSSL backend), compiled in statically; same defines as Makefile.mingw -->
+      <PreprocessorDefinitions>LIBSSH2_OPENSSL;LIBSSH2_MD5_ENABLE;LIBSSH2_DSA_ENABLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(SftpSrcDir)libssh2;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <CompileAs>CompileAsC</CompileAs>
+      <!-- own obj dir: libssh2\sftp.c would otherwise overwrite sftp.obj from src\sftp.cpp -->
+      <ObjectFileName>$(IntDir)libssh2\</ObjectFileName>
+      <AdditionalOptions>/utf-8</AdditionalOptions>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\precomp.h" />
+    <ClInclude Include="..\sftp.h" />
+    <ClInclude Include="..\dialogs.h" />
+    <ClInclude Include="..\sftpconn.h" />
+    <ClInclude Include="..\sftpglue.h" />
+    <ClInclude Include="..\sftpworker.h" />
+    <ClInclude Include="..\sftpconflictdlg.h" />
+    <ClInclude Include="..\plugindarkmode.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\sftp.def" />
+    <None Include="..\sftp.rc2" />
+    <None Include="..\sftp.rh" />
+    <None Include="..\sftp.rh2" />
+    <None Include="..\lang\lang.rh" />
+    <None Include="..\versinfo.rh2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\sftp.rc" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="lang_sftp.vcxproj">
       <Project>{2D3A2ADD-498B-4420-8E08-6A9FC9C09D5E}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="lang_sftp_cs.vcxproj">
+      <Project>{6F1C8B52-3E7A-4C1D-9B2E-5A4D7C8E9F01}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
   </ItemGroup>
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets">
-  </Import>
-  <ImportGroup Label="ExtensionTargets">
-  </ImportGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="SftpLibcryptoImportLib" BeforeTargets="Link" Inputs="$(LibcryptoDef)" Outputs="$(LibcryptoImportLib)">
+    <MakeDir Directories="$(IntDir)" />
+    <Exec Command="&quot;$(VCToolsInstallDir)bin\Hostx64\x64\lib.exe&quot; /nologo /machine:x64 /def:&quot;$(LibcryptoDef)&quot; /out:&quot;$(LibcryptoImportLib)&quot;" />
+  </Target>
 </Project>

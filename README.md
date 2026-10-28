@@ -138,11 +138,13 @@ mingw32-make -f Makefile.mingw CROSS_COMPILE=
 This compiles `sftp.spl`, `english.slg`, and `czech.slg` with statically linked C/C++ runtimes and `libssh2` (no MinGW DLL, external `libssh2.dll` or `z.dll` dependencies). The plugin uses the standard `libcrypto-3-x64.dll` provided by Open Salamander.
 
 ### Option B: Using Visual Studio (MSBuild)
-**Requirements:** Visual Studio 2022 (x64), libssh2 + OpenSSL via vcpkg.
+**Requirements:** Visual Studio 2022 or newer (or Build Tools) with the x64 C++ toolset and a Windows 10/11 SDK. No vcpkg: libssh2 is compiled from `src/libssh2` and the `libcrypto-3-x64.dll` import library is generated from `libcrypto-3-x64.def` during the build. The Open Salamander SDK is expected in `..\salamander-plugins\salamand` (override with `/p:SalamanderSdkDir=<path>`).
 
 ```powershell
 MSBuild src\vcxproj\sftp.vcxproj /p:Configuration=Release /p:Platform=x64
 ```
+
+Output goes to `build\Release_x64\` (`sftp.spl`, `lang\english.slg`, `lang\czech.slg`). The plugin is linked with the static CRT (`/MT`), so like the MinGW build it only needs `libcrypto-3-x64.dll` from Open Salamander.
 
 ---
 
