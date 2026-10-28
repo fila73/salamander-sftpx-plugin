@@ -1059,7 +1059,16 @@ bool CSftpConnection::ScpDownload(const char* remotePath, const char* localPath)
         done += (unsigned __int64)n;
         if (!ReportProgress(localPath, done, total)) { ErrorMsg = "Cancelled by user."; ok = false; break; }
     }
-    fclose(f);
+    if (ok && done < total)
+    {
+        ErrorMsg = "SCP download truncated (connection closed early).";
+        ok = false;
+    }
+    if (fclose(f) != 0 && ok)
+    {
+        ErrorMsg = "Disk write failed.";
+        ok = false;
+    }
     libssh2_channel_close(ch);
     libssh2_channel_free(ch);
     if (!ok && done == 0)
@@ -1105,12 +1114,26 @@ bool CSftpConnection::ScpUpload(const char* localPath, const char* remotePath)
         done += (unsigned __int64)n;
         if (!ReportProgress(localPath, done, total)) { ErrorMsg = "Cancelled by user."; ok = false; break; }
     }
+    if (ok && ferror(f))
+    {
+        ErrorMsg = "Local file read failed.";
+        ok = false;
+    }
     fclose(f);
+    if (ok && done != total)
+    {
+        ErrorMsg = "Local file size changed during upload.";
+        ok = false;
+    }
     if (ok)
     {
-        libssh2_channel_send_eof(ch);
-        libssh2_channel_wait_eof(ch);
-        libssh2_channel_wait_closed(ch);
+        if (libssh2_channel_send_eof(ch) < 0 ||
+            libssh2_channel_wait_eof(ch) < 0 ||
+            libssh2_channel_wait_closed(ch) < 0)
+        {
+            SetError("SCP upload (finish)");
+            ok = false;
+        }
     }
     libssh2_channel_free(ch);
     return ok;
@@ -1328,7 +1351,7 @@ bool CSftpConnection::Download(const char* remotePath, const char* localPath, un
     unsigned __int64 total = 0;
     if (libssh2_sftp_fstat(h, &at) == 0 && (at.flags & LIBSSH2_SFTP_ATTR_SIZE))
         total = at.filesize;
-    if (resumeOffset > 0 && resumeOffset <= total)
+    if (resumeOffset > 0 && resumeOffset < total) // offset == size would transfer nothing
         libssh2_sftp_seek64(h, resumeOffset); // resume from given position
     else
         resumeOffset = 0;
@@ -1357,7 +1380,16 @@ bool CSftpConnection::Download(const char* remotePath, const char* localPath, un
         done += (unsigned __int64)n;
         if (!ReportProgress(localPath, done, total)) { ErrorMsg = "Cancelled by user."; ok = false; break; }
     }
-    fclose(f);
+    if (ok && total > 0 && done != total)
+    {
+        ErrorMsg = "Download incomplete (remote file size changed or connection closed early).";
+        ok = false;
+    }
+    if (fclose(f) != 0 && ok)
+    {
+        ErrorMsg = "Disk write failed.";
+        ok = false;
+    }
     libssh2_sftp_close(h);
     if (!ok && done == 0 && resumeOffset == 0)
     {
@@ -1434,8 +1466,23 @@ bool CSftpConnection::Upload(const char* localPath, const char* remotePath, unsi
         done += (unsigned __int64)n;
         if (!ReportProgress(localPath, done, total)) { ErrorMsg = "Cancelled by user."; ok = false; break; }
     }
+    if (ok && ferror(f))
+    {
+        ErrorMsg = "Local file read failed.";
+        ok = false;
+    }
     fclose(f);
-    libssh2_sftp_close(h);
+    if (ok && done != total)
+    {
+        ErrorMsg = "Local file size changed during upload.";
+        ok = false;
+    }
+    // close flushes pending writes; a failure here means the data may not be stored
+    if (libssh2_sftp_close(h) < 0 && ok)
+    {
+        SetError("Closing remote file");
+        ok = false;
+    }
     if (!ok && done == 0 && resumeOffset == 0)
     {
         libssh2_sftp_unlink(Sftp, remotePath); // clean up 0-byte remote file if cancelled before any data was written
