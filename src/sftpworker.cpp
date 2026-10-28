@@ -582,6 +582,10 @@ bool CSftpTransferWorker::DoDownloadRecursive(const std::string& remote, const s
         if (!DoDownloadRecursive(r, l, entries[i].IsDir, deleteSource))
             return false;
     }
+    // Move: non-recursive rmdir succeeds only if all children were moved
+    // (a directory with skipped files is kept)
+    if (deleteSource)
+        WorkerConn.RemoveDir(remote.c_str());
     return true;
 }
 
@@ -706,6 +710,10 @@ bool CSftpTransferWorker::DoUploadRecursive(const std::string& local, const std:
     } while (FindNextFileA(h, &fd));
 
     FindClose(h);
+    // Move: non-recursive rmdir succeeds only if all children were moved
+    // (a directory with skipped files is kept)
+    if (ok && deleteSource)
+        RemoveDirectoryA(local.c_str());
     return ok;
 }
 
