@@ -3286,6 +3286,8 @@ CPluginFSInterface::CreateDir(const char* fsName, int mode, HWND parent, char* n
     return TRUE;
 }
 
+static void SftpReportUnsafeName(HWND parent, const char* name);
+
 void WINAPI
 CPluginFSInterface::ViewFile(const char* fsName, HWND parent,
                              CSalamanderForViewFileOnFSAbstract* salamander,
@@ -3305,6 +3307,14 @@ CPluginFSInterface::ViewFile(const char* fsName, HWND parent,
     _snprintf_s(uniqueFileName + len, sizeof(uniqueFileName) - len, _TRUNCATE,
                 ":%I64u:%08lx%08lx", file.Size.Value,
                 file.LastWrite.dwHighDateTime, file.LastWrite.dwLowDateTime);
+
+    // the cache just appends 'file.Name' to its directory: refuse names that are not one safe local component
+    char nameCheck[2 * MAX_PATH];
+    if (!LocalJoinName("C:\\", file.Name, nameCheck, sizeof(nameCheck)))
+    {
+        SftpReportUnsafeName(parent, file.Name);
+        return;
+    }
 
     // obtain the cache copy name
     BOOL fileExists;
@@ -3383,6 +3393,10 @@ static bool SftpDeleteRecursive(CSftpConnection& conn, const char* remote, bool 
 // transfer functions below; Move must not delete the source when this is non-zero
 static int g_SkippedCount = 0;
 
+// Name rejected by SftpDownloadRecursive (empty = failure was something else). The caller clears it
+// before the call and reports it instead of the connection's (unrelated) LastError().
+static char g_DlUnsafeName[MAX_PATH];
+
 // recursive download of file/directory from SFTP to disk
 static bool SftpDownloadRecursive(CSftpConnection& conn, const char* remote, const char* local, bool isDir)
 {
@@ -3449,10 +3463,15 @@ static bool SftpDownloadRecursive(CSftpConnection& conn, const char* remote, con
             !SftpJoinName(remote, entries[i].Name.c_str(), r, MAX_PATH))
         {
             SftpTraceLog("SftpDownloadRecursive: unsafe remote name rejected in %s", remote);
+            lstrcpyn(g_DlUnsafeName, entries[i].Name.c_str(), MAX_PATH);
             return false; // never act on a name that could escape the directory
         }
-        lstrcpyn(l, local, 2 * MAX_PATH);
-        SalamanderGeneral->SalPathAppend(l, entries[i].Name.c_str(), 2 * MAX_PATH);
+        if (!LocalJoinName(local, entries[i].Name.c_str(), l, 2 * MAX_PATH))
+        {
+            SftpTraceLog("SftpDownloadRecursive: name not usable as a local file name rejected in %s", remote);
+            lstrcpyn(g_DlUnsafeName, entries[i].Name.c_str(), MAX_PATH);
+            return false; // never build a local path from a name that could escape or hit a device
+        }
         if (!SftpDownloadRecursive(conn, r, l, entries[i].IsDir))
             return false;
     }
@@ -3658,19 +3677,22 @@ static unsigned __int64 SftpDirSize(CSftpConnection& conn, const char* remote, i
 }
 
 // Edit file: download to temp, open in editor, after confirmation upload back.
+static void SftpReportUnsafeName(HWND parent, const char* name);
+
 void SftpEditFile(HWND parent, CPluginFSInterface* fs, const char* remoteDir, const char* fileName)
 {
     if (fs == NULL || !fs->EnsureConnected(parent))
         return;
     char remote[MAX_PATH];
-    if (!SftpJoinName(remoteDir, fileName, remote, MAX_PATH))
-        return; // unsafe name from server listing
     char tmpDir[MAX_PATH], tmpFile[2 * MAX_PATH];
     GetTempPath(MAX_PATH, tmpDir);
     SalamanderGeneral->SalPathAppend(tmpDir, "SFTP_edit", MAX_PATH);
+    if (!SftpJoinName(remoteDir, fileName, remote, MAX_PATH) || !LocalJoinName(tmpDir, fileName, tmpFile, 2 * MAX_PATH))
+    {
+        SftpReportUnsafeName(parent, fileName); // unsafe name from server listing
+        return;
+    }
     CreateDirectory(tmpDir, NULL);
-    lstrcpyn(tmpFile, tmpDir, 2 * MAX_PATH);
-    SalamanderGeneral->SalPathAppend(tmpFile, fileName, 2 * MAX_PATH);
 
     if (!fs->Conn.Download(remote, tmpFile))
     {
@@ -3942,6 +3964,7 @@ void SftpSyncDir(HWND parent, CPluginFSInterface* fs, const char* remoteDir, con
     SftpProgressBegin(parent, isUpload, isUpload ? localDir : remoteDir, isUpload ? remoteDir : localDir, 1, 0, connName, &fs->Conn);
     g_SyncMode = 1;
     bool ok;
+    g_DlUnsafeName[0] = 0;
     if (direction == 0)
         ok = SftpDownloadRecursive(fs->Conn, remoteDir, localDir, true);
     else
@@ -3953,7 +3976,10 @@ void SftpSyncDir(HWND parent, CPluginFSInterface* fs, const char* remoteDir, con
     if (!ok && !SftpIsCancelled())
     {
         char eb[600];
-        _snprintf_s(eb, _TRUNCATE, "Synchronization failed:\n%s", fs->Conn.LastError());
+        if (direction == 0 && g_DlUnsafeName[0] != 0)
+            _snprintf_s(eb, _TRUNCATE, "Synchronization failed:\nUnsafe file name from server: \"%s\"", g_DlUnsafeName);
+        else
+            _snprintf_s(eb, _TRUNCATE, "Synchronization failed:\n%s", fs->Conn.LastError());
         SalamanderGeneral->SalMessageBox(parent, eb, LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
     }
     else if (!SftpIsCancelled())
@@ -4484,8 +4510,15 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
             }
         }
 
+        // items are staged in a fresh unique directory (never in %TEMP% itself): only it is deleted afterwards
         char tmpDir[MAX_PATH];
-        GetTempPath(MAX_PATH, tmpDir);
+        if (!SalamanderGeneral->SalGetTempFileName(NULL, "SFT", tmpDir, FALSE, NULL))
+        {
+            SalamanderGeneral->SalMessageBox(parent, "Cannot create a temporary directory.", LoadStr(IDS_PLUGINNAME),
+                                             MB_OK | MB_ICONEXCLAMATION);
+            cancelOrHandlePath = TRUE;
+            return TRUE;
+        }
 
         BOOL focusedF = (selectedFiles == 0 && selectedDirs == 0);
         int totalFilesF = focusedF ? 1 : (selectedFiles + selectedDirs);
@@ -4509,12 +4542,13 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                 break;
             char src[MAX_PATH], dst[MAX_PATH], tmpItem[2 * MAX_PATH];
             BOOL step = FALSE;
-            BOOL unsafeName = !(SftpJoinName(Path, ff->Name, src, MAX_PATH) && SftpJoinName(remoteTargetDir, ff->Name, dst, MAX_PATH));
+            // tmpItem must be valid before anything touches it: LocalDeleteRecursive runs on it below
+            BOOL unsafeName = !(SftpJoinName(Path, ff->Name, src, MAX_PATH) && SftpJoinName(remoteTargetDir, ff->Name, dst, MAX_PATH) &&
+                                LocalJoinName(tmpDir, ff->Name, tmpItem, 2 * MAX_PATH));
             if (!unsafeName)
             {
-                lstrcpyn(tmpItem, tmpDir, 2 * MAX_PATH);
-                SalamanderGeneral->SalPathAppend(tmpItem, ff->Name, 2 * MAX_PATH);
                 g_SkippedCount = 0;
+                g_DlUnsafeName[0] = 0;
                 step = SftpDownloadRecursive(Conn, src, tmpItem, isDirF != 0) &&
                        SftpUploadRecursive(*pTargetConn, tmpItem, dst, isDirF != 0);
                 LocalDeleteRecursive(tmpItem, isDirF != 0); // cleanup temp
@@ -4529,6 +4563,8 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                 char eb[700];
                 if (unsafeName)
                     _snprintf_s(eb, _TRUNCATE, "Unsafe file name from server: \"%s\"\n\nContinue?", ff->Name);
+                else if (g_DlUnsafeName[0] != 0)
+                    _snprintf_s(eb, _TRUNCATE, "Error copying \"%s\":\nUnsafe file name from server: \"%s\"\n\nContinue?", ff->Name, g_DlUnsafeName);
                 else
                     _snprintf_s(eb, _TRUNCATE, "Error copying \"%s\":\n%s\n\nContinue?", ff->Name, pTargetConn->LastError());
                 if (SalamanderGeneral->SalMessageBox(parent, eb, LoadStr(IDS_PLUGINNAME), MB_YESNO | MB_ICONEXCLAMATION) == IDNO)
@@ -4544,6 +4580,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                 break;
         }
         SftpProgressEnd();
+        LocalDeleteRecursive(tmpDir, true); // staging directory (also after error / cancel)
         if (pTargetConn == &localTargetConn)
         {
             localTargetConn.Disconnect();
@@ -4617,7 +4654,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
             break;
 
         char remote[MAX_PATH], local[2 * MAX_PATH];
-        if (!SftpJoinName(Path, f->Name, remote, MAX_PATH))
+        if (!SftpJoinName(Path, f->Name, remote, MAX_PATH) || !LocalJoinName(target, f->Name, local, 2 * MAX_PATH))
         {
             SftpReportUnsafeName(parent, f->Name);
             nameRejected = TRUE; // reported as failed below, so Move does not claim success
@@ -4625,8 +4662,6 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                 break;
             continue; // unsafe name from server listing: never enqueue it
         }
-        lstrcpyn(local, target, 2 * MAX_PATH);
-        SalamanderGeneral->SalPathAppend(local, f->Name, 2 * MAX_PATH);
 
         CSftpTransferTask task;
         task.TaskType = CSftpTransferTask::TaskDownload;

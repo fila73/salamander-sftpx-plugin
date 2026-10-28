@@ -644,8 +644,12 @@ bool CSftpTransferWorker::DoDownloadRecursive(const std::string& remote, const s
             SftpSetUnsafeName(entries[i].Name.c_str());
             return false; // never act on a name that could escape the directory
         }
-        lstrcpynA(l, local.c_str(), MAX_PATH);
-        PathAppendA(l, entries[i].Name.c_str());
+        if (!LocalJoinName(local.c_str(), entries[i].Name.c_str(), l, MAX_PATH))
+        {
+            SftpTraceLog("DoDownloadRecursive: name not usable as a local file name rejected in %s", remote.c_str());
+            SftpSetUnsafeName(entries[i].Name.c_str());
+            return false; // never build a local path from a name that could escape or hit a device
+        }
 
         if (!DoDownloadRecursive(r, l, entries[i].IsDir, deleteSource))
             return false;

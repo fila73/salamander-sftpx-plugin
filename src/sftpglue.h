@@ -76,6 +76,9 @@ void SftpJoin(const char* base, const char* name, char* out, int outSize); // US
 // Joins a single literal name (from a server listing or panel item). No normalization; returns false
 // (out = "") for empty, ".", "..", names containing "/" and too long results. Callers must skip the entry.
 bool SftpJoinName(const char* base, const char* name, char* out, int outSize);
+// Same for a LOCAL Windows path: name is one component from an untrusted server (rejects ..,
+// separators, ':' and other reserved chars, device names, trailing space/dot); out is cleared on failure
+bool LocalJoinName(const char* base, const char* name, char* out, int outSize);
 void SftpParent(const char* path, char* out, int outSize); // up-dir
 void SftpFixTypedPath(char* path); // path starting with backslash = Windows-style typed path: backslash -> '/'; else literal
 void SftpRemotePart(const char* userPart, char* out, int outSize); // strip //host, apply the rule above
