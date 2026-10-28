@@ -2425,6 +2425,7 @@ static BOOL SftpParseHostInto(CSftpProfile& prof, CSftpConnection& conn, const c
         }
         fresh.Port = port;
         prof = fresh;
+        SecureZeroMemory(&fresh, sizeof(fresh)); // may hold a decrypted password
         conn.Disconnect(); // different server -> new connection
     }
     return TRUE;
@@ -4786,6 +4787,7 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
             fresh_prof.Port = 22;
         Conn.Disconnect();
         Profile = fresh_prof;
+        SecureZeroMemory(&fresh_prof, sizeof(fresh_prof)); // may hold a decrypted password
     }
     else if (specHost[0] != 0 &&
              (_stricmp(specHost, Profile.Host) != 0 || specPort != (Profile.Port > 0 ? Profile.Port : 22) ||
