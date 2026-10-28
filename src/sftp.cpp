@@ -1089,6 +1089,8 @@ CPluginInterface::PasswordManagerEvent(HWND parent, int event)
             SalamanderGeneral->SalMessageBox(parent, "Some saved SFTP passwords could not be decrypted and were left unchanged.",
                                              LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
         }
+        // persist at once so that a crash cannot leave blobs of the old master password in the registry
+        SaveSftpConfigurationImmediately(parent);
     }
 }
 
