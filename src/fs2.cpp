@@ -2460,8 +2460,8 @@ CPluginFSInterface::GetFullName(CFileData& file, int isDir, char* buf, int bufSi
     SftpHostPrefix(Profile, prefix, sizeof(prefix));
     if (isDir == 2) // up-dir
         SftpParent(Path, remote, MAX_PATH);
-    else
-        SftpJoin(Path, file.Name, remote, MAX_PATH);
+    else if (!SftpJoinName(Path, file.Name, remote, MAX_PATH))
+        return FALSE; // unsafe name from server listing
     _snprintf_s(buf, bufSize, _TRUNCATE, "%s%s", prefix, remote);
     return TRUE;
 }
@@ -3222,8 +3222,11 @@ CPluginFSInterface::QuickRename(const char* fsName, int mode, HWND parent, CFile
     lstrcpyn(newName, buf, MAX_PATH);
 
     char remoteFrom[MAX_PATH], remoteTo[MAX_PATH];
-    SftpJoin(Path, file.Name, remoteFrom, MAX_PATH);
-    SftpJoin(Path, newName, remoteTo, MAX_PATH);
+    if (!SftpJoinName(Path, file.Name, remoteFrom, MAX_PATH) || !SftpJoinName(Path, newName, remoteTo, MAX_PATH))
+    {
+        SalamanderGeneral->SalMessageBox(parent, "Invalid name.", LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
+        return FALSE;
+    }
 
     if (!EnsureConnected(parent))
         return FALSE;
@@ -3326,8 +3329,8 @@ CPluginFSInterface::ViewFile(const char* fsName, HWND parent,
     if (!fileExists)
     {
         char remote[MAX_PATH];
-        SftpJoin(Path, file.Name, remote, MAX_PATH);
-        if (EnsureConnected(parent) && Conn.Download(remote, tmpFileName))
+        bool nameOk = SftpJoinName(Path, file.Name, remote, MAX_PATH);
+        if (nameOk && EnsureConnected(parent) && Conn.Download(remote, tmpFileName))
         {
             newFileOK = TRUE;
             HANDLE hFile = HANDLES_Q(CreateFile(tmpFileName, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -3374,7 +3377,12 @@ static bool SftpDeleteRecursive(CSftpConnection& conn, const char* remote, bool 
         for (size_t i = 0; i < entries.size(); i++)
         {
             char child[MAX_PATH];
-            SftpJoin(remote, entries[i].Name.c_str(), child, MAX_PATH);
+            if (strlen(entries[i].Name.c_str()) != entries[i].Name.size() ||
+                !SftpJoinName(remote, entries[i].Name.c_str(), child, MAX_PATH))
+            {
+                SftpTraceLog("SftpDeleteRecursive: unsafe remote name rejected in %s", remote);
+                return false; // never act on a name that could escape the directory
+            }
             if (!SftpDeleteRecursive(conn, child, entries[i].IsDir))
                 return false;
         }
@@ -3448,7 +3456,12 @@ static bool SftpDownloadRecursive(CSftpConnection& conn, const char* remote, con
         if (SftpIsCancelled())
             return false;
         char r[MAX_PATH], l[2 * MAX_PATH];
-        SftpJoin(remote, entries[i].Name.c_str(), r, MAX_PATH);
+        if (strlen(entries[i].Name.c_str()) != entries[i].Name.size() ||
+            !SftpJoinName(remote, entries[i].Name.c_str(), r, MAX_PATH))
+        {
+            SftpTraceLog("SftpDownloadRecursive: unsafe remote name rejected in %s", remote);
+            return false; // never act on a name that could escape the directory
+        }
         lstrcpyn(l, local, 2 * MAX_PATH);
         SalamanderGeneral->SalPathAppend(l, entries[i].Name.c_str(), 2 * MAX_PATH);
         if (!SftpDownloadRecursive(conn, r, l, entries[i].IsDir))
@@ -3552,7 +3565,11 @@ static bool SftpUploadRecursive(CSftpConnection& conn, const char* local, const 
         char l[2 * MAX_PATH], r[MAX_PATH];
         lstrcpyn(l, local, 2 * MAX_PATH);
         SalamanderGeneral->SalPathAppend(l, fd.cFileName, 2 * MAX_PATH);
-        SftpJoin(remote, fd.cFileName, r, MAX_PATH);
+        if (!SftpJoinName(remote, fd.cFileName, r, MAX_PATH))
+        {
+            ok = false; // local name that cannot be a single remote component
+            break;
+        }
         bool childDir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
         if (!SftpUploadRecursive(conn, l, r, childDir))
         {
@@ -3631,7 +3648,12 @@ static unsigned __int64 SftpDirSize(CSftpConnection& conn, const char* remote, i
         }
 
         char child[MAX_PATH];
-        SftpJoin(remote, entries[i].Name.c_str(), child, MAX_PATH);
+        if (strlen(entries[i].Name.c_str()) != entries[i].Name.size() ||
+            !SftpJoinName(remote, entries[i].Name.c_str(), child, MAX_PATH))
+        {
+            SftpTraceLog("SftpDirSize: unsafe remote name skipped in %s", remote);
+            continue; // never descend into a name that could escape the directory
+        }
         if (entries[i].IsDir && !entries[i].IsLink) // do NOT recurse into symlinked directories to prevent cycles
         {
             dirs++;
@@ -3652,7 +3674,8 @@ void SftpEditFile(HWND parent, CPluginFSInterface* fs, const char* remoteDir, co
     if (fs == NULL || !fs->EnsureConnected(parent))
         return;
     char remote[MAX_PATH];
-    SftpJoin(remoteDir, fileName, remote, MAX_PATH);
+    if (!SftpJoinName(remoteDir, fileName, remote, MAX_PATH))
+        return; // unsafe name from server listing
     char tmpDir[MAX_PATH], tmpFile[2 * MAX_PATH];
     GetTempPath(MAX_PATH, tmpDir);
     SalamanderGeneral->SalPathAppend(tmpDir, "SFTP_edit", MAX_PATH);
@@ -3738,7 +3761,12 @@ void SftpCalcSize(HWND parent, CPluginFSInterface* fs, const char* remoteDir, in
         if (strcmp(f->Name, "..") != 0)
         {
             char remote[MAX_PATH];
-            SftpJoin(remoteDir, f->Name, remote, MAX_PATH);
+            if (!SftpJoinName(remoteDir, f->Name, remote, MAX_PATH))
+            {
+                if (focused)
+                    break;
+                continue; // unsafe name from server listing
+            }
             if (isDir)
             {
                 dirs++;
@@ -3864,7 +3892,8 @@ void SftpOnSpacePressedOnFolder(int panel, const CFileData* f)
 
     // 2. Calculate folder size on the server
     char remote[MAX_PATH];
-    SftpJoin(fs->Path, folderName, remote, MAX_PATH);
+    if (!SftpJoinName(fs->Path, folderName, remote, MAX_PATH))
+        return; // unsafe name from server listing
 
     unsigned __int64 dirSize = 0;
     int subFiles = 0, subDirs = 0;
@@ -3956,7 +3985,15 @@ CPluginFSInterface::Delete(const char* fsName, int mode, HWND parent, int panel,
             break;
 
         char remote[MAX_PATH];
-        SftpJoin(Path, f->Name, remote, MAX_PATH);
+        if (!SftpJoinName(Path, f->Name, remote, MAX_PATH))
+        {
+            SalamanderGeneral->SalMessageBox(parent, "Cannot delete: unsafe file name received from server.",
+                                             LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
+            success = FALSE;
+            if (focused)
+                break;
+            continue;
+        }
         if (!SftpDeleteRecursive(Conn, remote, isDir != 0))
         {
             char eb[700];
@@ -4461,14 +4498,16 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
             if (ff == NULL)
                 break;
             char src[MAX_PATH], dst[MAX_PATH], tmpItem[2 * MAX_PATH];
-            SftpJoin(Path, ff->Name, src, MAX_PATH);
-            SftpJoin(remoteTargetDir, ff->Name, dst, MAX_PATH);
-            lstrcpyn(tmpItem, tmpDir, 2 * MAX_PATH);
-            SalamanderGeneral->SalPathAppend(tmpItem, ff->Name, 2 * MAX_PATH);
-            g_SkippedCount = 0;
-            BOOL step = SftpDownloadRecursive(Conn, src, tmpItem, isDirF != 0) &&
-                        SftpUploadRecursive(*pTargetConn, tmpItem, dst, isDirF != 0);
-            LocalDeleteRecursive(tmpItem, isDirF != 0); // cleanup temp
+            BOOL step = FALSE;
+            if (SftpJoinName(Path, ff->Name, src, MAX_PATH) && SftpJoinName(remoteTargetDir, ff->Name, dst, MAX_PATH))
+            {
+                lstrcpyn(tmpItem, tmpDir, 2 * MAX_PATH);
+                SalamanderGeneral->SalPathAppend(tmpItem, ff->Name, 2 * MAX_PATH);
+                g_SkippedCount = 0;
+                step = SftpDownloadRecursive(Conn, src, tmpItem, isDirF != 0) &&
+                       SftpUploadRecursive(*pTargetConn, tmpItem, dst, isDirF != 0);
+                LocalDeleteRecursive(tmpItem, isDirF != 0); // cleanup temp
+            }
             if (!step)
             {
                 if (SftpIsCancelled())
@@ -4562,7 +4601,12 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
             break;
 
         char remote[MAX_PATH], local[2 * MAX_PATH];
-        SftpJoin(Path, f->Name, remote, MAX_PATH);
+        if (!SftpJoinName(Path, f->Name, remote, MAX_PATH))
+        {
+            if (focused)
+                break;
+            continue; // unsafe name from server listing: never enqueue it
+        }
         lstrcpyn(local, target, 2 * MAX_PATH);
         SalamanderGeneral->SalPathAppend(local, f->Name, 2 * MAX_PATH);
 
@@ -4799,7 +4843,8 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
         const char* base = strrchr(name, '\\');
         base = (base != NULL) ? base + 1 : name;
         char remote[MAX_PATH];
-        SftpJoin(remoteDir, base, remote, MAX_PATH);
+        if (!SftpJoinName(remoteDir, base, remote, MAX_PATH))
+            continue; // local name that cannot be a single remote component
 
         CSftpTransferTask task;
         task.TaskType = CSftpTransferTask::TaskUpload;
@@ -4944,9 +4989,8 @@ CPluginFSInterface::ChangeAttributes(const char* fsName, HWND parent, int panel,
     if (f != NULL)
     {
         char remote[MAX_PATH];
-        SftpJoin(Path, f->Name, remote, MAX_PATH);
         unsigned long m;
-        if (Conn.GetPermissions(remote, m))
+        if (SftpJoinName(Path, f->Name, remote, MAX_PATH) && Conn.GetPermissions(remote, m))
             g_ChmodOctal = (int)m;
     }
 
@@ -4965,7 +5009,13 @@ CPluginFSInterface::ChangeAttributes(const char* fsName, HWND parent, int panel,
         if (f == NULL)
             break;
         char remote[MAX_PATH];
-        SftpJoin(Path, f->Name, remote, MAX_PATH);
+        if (!SftpJoinName(Path, f->Name, remote, MAX_PATH))
+        {
+            success = FALSE; // unsafe name from server listing
+            if (focused)
+                break;
+            continue;
+        }
         if (!Conn.Chmod(remote, mode))
         {
             char eb[700];
@@ -4999,7 +5049,8 @@ CPluginFSInterface::ShowProperties(const char* fsName, HWND parent, int panel,
     if (f == NULL)
         return;
     char remote[MAX_PATH];
-    SftpJoin(Path, f->Name, remote, MAX_PATH);
+    if (!SftpJoinName(Path, f->Name, remote, MAX_PATH))
+        return; // unsafe name from server listing
     unsigned __int64 size;
     unsigned long perms, uid, gid, mtime;
     if (!Conn.StatFull(remote, size, perms, uid, gid, mtime))

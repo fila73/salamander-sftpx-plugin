@@ -103,12 +103,10 @@ bool SftpEnsureConnected(HWND parent, CSftpConnection& conn, CSftpProfile& profi
 
 void SftpNormalize(char* path)
 {
-    // normalize to "/", split into components, resolve "." and ".."
+    // split into components by "/", resolve "." and ".."
+    // backslash is NOT a separator: on a POSIX server it is an ordinary filename character
     char tmp[MAX_PATH];
     lstrcpyn(tmp, (path && *path) ? path : "/", MAX_PATH);
-    for (char* p = tmp; *p; p++)
-        if (*p == '\\')
-            *p = '/';
 
     const char* parts[256];
     int n = 0;
@@ -151,6 +149,28 @@ void SftpJoin(const char* base, const char* name, char* out, int outSize)
         b[bl - 1] = 0; // remove trailing slash (except root "" -> joins to "/name")
     _snprintf_s(out, outSize, _TRUNCATE, "%s/%s", b, (name && *name) ? name : "");
     SftpNormalize(out);
+}
+
+bool SftpJoinName(const char* base, const char* name, char* out, int outSize)
+{
+    // 'name' is ONE literal path component (e.g. from a server listing): never normalized,
+    // so it cannot climb ("..") or split ("/"); backslash is kept as an ordinary character
+    if (out != NULL && outSize > 0)
+        out[0] = 0;
+    if (name == NULL || name[0] == 0 || strcmp(name, ".") == 0 || strcmp(name, "..") == 0 ||
+        strchr(name, '/') != NULL)
+        return false;
+    char b[MAX_PATH];
+    lstrcpyn(b, (base && *base) ? base : "/", MAX_PATH);
+    int bl = (int)strlen(b);
+    if (bl > 0 && b[bl - 1] == '/')
+        b[bl - 1] = 0; // remove trailing slash (root "/" -> "" -> joins to "/name")
+    if (_snprintf_s(out, outSize, _TRUNCATE, "%s/%s", b, name) < 0)
+    {
+        out[0] = 0; // too long
+        return false;
+    }
+    return true;
 }
 
 void SftpParent(const char* path, char* out, int outSize)

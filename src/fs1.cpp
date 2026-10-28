@@ -1140,7 +1140,8 @@ CPluginInterfaceForFS::ExecuteOnFS(int panel, CPluginFSInterfaceAbstract* plugin
         }
         else // subdirectory
         {
-            SftpJoin(fs->Path, file.Name, newPath, MAX_PATH);
+            if (!SftpJoinName(fs->Path, file.Name, newPath, MAX_PATH))
+                return; // unsafe name from server listing
             fs = NULL;
             SalamanderGeneral->ChangePanelPathToPluginFS(panel, pluginFSName, newPath);
         }
@@ -1164,7 +1165,8 @@ CPluginInterfaceForFS::ExecuteOnFS(int panel, CPluginFSInterfaceAbstract* plugin
 
         SalamanderGeneral->SetUserWorkedOnPanelPath(panel);
         char remote[MAX_PATH];
-        SftpJoin(fs->Path, file.Name, remote, MAX_PATH);
+        if (!SftpJoinName(fs->Path, file.Name, remote, MAX_PATH))
+            return; // unsafe name from server listing
         char tmpDir[MAX_PATH], tmpFile[MAX_PATH];
         GetTempPath(MAX_PATH, tmpDir);
         lstrcpyn(tmpFile, tmpDir, MAX_PATH);

@@ -623,7 +623,12 @@ bool CSftpTransferWorker::DoDownloadRecursive(const std::string& remote, const s
         LeaveCriticalSection(&State.Lock);
 
         char r[MAX_PATH], l[MAX_PATH];
-        SftpJoin(remote.c_str(), entries[i].Name.c_str(), r, MAX_PATH);
+        if (strlen(entries[i].Name.c_str()) != entries[i].Name.size() ||
+            !SftpJoinName(remote.c_str(), entries[i].Name.c_str(), r, MAX_PATH))
+        {
+            SftpTraceLog("DoDownloadRecursive: unsafe remote name rejected in %s", remote.c_str());
+            return false; // never act on a name that could escape the directory
+        }
         lstrcpynA(l, local.c_str(), MAX_PATH);
         PathAppendA(l, entries[i].Name.c_str());
 
@@ -772,7 +777,11 @@ bool CSftpTransferWorker::DoUploadRecursive(const std::string& local, const std:
         char l[MAX_PATH], r[MAX_PATH];
         lstrcpynA(l, local.c_str(), MAX_PATH);
         PathAppendA(l, fd.cFileName);
-        SftpJoin(remote.c_str(), fd.cFileName, r, MAX_PATH);
+        if (!SftpJoinName(remote.c_str(), fd.cFileName, r, MAX_PATH))
+        {
+            ok = false; // local name that cannot be a single remote component
+            break;
+        }
 
         bool subIsDir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
         if (!DoUploadRecursive(l, r, subIsDir, deleteSource))

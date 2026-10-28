@@ -72,7 +72,10 @@ extern int SftpEncoding; // 0 = Auto/UTF-8, 1 = UTF-8, 2 = Off
 
 // POSIX path helpers (forward slashes, absolute paths start with "/").
 void SftpNormalize(char* path);                       // in-place normalize
-void SftpJoin(const char* base, const char* name, char* out, int outSize);
+void SftpJoin(const char* base, const char* name, char* out, int outSize); // USER-typed path, normalized
+// Joins a single literal name (from a server listing or panel item). No normalization; returns false
+// (out = "") for empty, ".", "..", names containing "/" and too long results. Callers must skip the entry.
+bool SftpJoinName(const char* base, const char* name, char* out, int outSize);
 void SftpParent(const char* path, char* out, int outSize); // up-dir
 bool SftpIsSamePath(const char* a, const char* b);
 bool SftpIsRoot(const char* path);
