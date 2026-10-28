@@ -4380,37 +4380,22 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
 
         char targetHost[256] = "";
         char targetUser[128] = "";
-        int targetPort = 0;
+        int targetPort = 22;
         char remoteTargetDir[MAX_PATH] = "/";
 
         if ((p[0] == '/' || p[0] == '\\') && (p[1] == '/' || p[1] == '\\'))
         {
             // Host specified: //user@host:port/path
-            const char* hostStart = p + 2;
-            const char* slash = hostStart;
+            const char* slash = p + 2;
             while (*slash != 0 && *slash != '/' && *slash != '\\')
                 slash++;
-            int hLen = (int)(slash - hostStart);
-            if (hLen > 0 && hLen < (int)sizeof(targetHost))
+            if (!SftpParseHostSpec(p, targetUser, sizeof(targetUser), targetHost, sizeof(targetHost), &targetPort))
             {
-                char hostBuf[320];
-                memcpy(hostBuf, hostStart, hLen);
-                hostBuf[hLen] = 0;
-                char* at = strrchr(hostBuf, '@'); // the user name may contain '@'
-                char* hpart = hostBuf;
-                if (at != NULL)
-                {
-                    *at = 0;
-                    lstrcpynA(targetUser, hostBuf, sizeof(targetUser));
-                    hpart = at + 1;
-                }
-                char* colon = strchr(hpart, ':');
-                if (colon != NULL)
-                {
-                    *colon = 0;
-                    targetPort = atoi(colon + 1);
-                }
-                lstrcpynA(targetHost, hpart, sizeof(targetHost));
+                char eb[MAX_PATH + 64];
+                _snprintf_s(eb, _TRUNCATE, "Invalid host or port in path: %s", target);
+                SalamanderGeneral->SalMessageBox(parent, eb, LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
+                cancelOrHandlePath = TRUE;
+                return TRUE;
             }
             if (*slash != 0)
                 lstrcpynA(remoteTargetDir, slash, sizeof(remoteTargetDir));
@@ -4444,7 +4429,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
         {
             if (_stricmp(targetHost, Profile.Host) != 0)
                 isSameServer = false;
-            else if (targetPort > 0 && targetPort != (Profile.Port > 0 ? Profile.Port : 22))
+            else if (targetPort != (Profile.Port > 0 ? Profile.Port : 22))
                 isSameServer = false;
             else if (targetUser[0] != 0 && Profile.User[0] != 0 && _stricmp(targetUser, Profile.User) != 0)
                 isSameServer = false;
@@ -4471,7 +4456,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                 CPluginFSInterface* pFS = static_cast<CPluginFSInterface*>(fsList[i]);
                 if (_stricmp(pFS->Profile.Host, targetHost) == 0 &&
                     (targetUser[0] == 0 || _stricmp(pFS->Profile.User, targetUser) == 0) &&
-                    (targetPort == 0 || (pFS->Profile.Port > 0 ? pFS->Profile.Port : 22) == targetPort))
+                    (pFS->Profile.Port > 0 ? pFS->Profile.Port : 22) == targetPort)
                 {
                     targetProfile = pFS->Profile;
                     if (pFS->Conn.IsConnected())
@@ -4487,7 +4472,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                 {
                     if (_stricmp(SftpProfiles[i].Host, targetHost) == 0 &&
                         (targetUser[0] == 0 || _stricmp(SftpProfiles[i].User, targetUser) == 0) &&
-                        (targetPort == 0 || (SftpProfiles[i].Port > 0 ? SftpProfiles[i].Port : 22) == targetPort))
+                        (SftpProfiles[i].Port > 0 ? SftpProfiles[i].Port : 22) == targetPort)
                     {
                         SftpProfileFromSaved(targetProfile, SftpProfiles[i]);
                         break;
@@ -4500,7 +4485,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                 lstrcpynA(targetProfile.Host, targetHost, sizeof(targetProfile.Host));
                 if (targetUser[0] != 0)
                     lstrcpynA(targetProfile.User, targetUser, sizeof(targetProfile.User));
-                targetProfile.Port = targetPort > 0 ? targetPort : 22;
+                targetProfile.Port = targetPort;
                 targetProfile.Valid = true;
             }
 
