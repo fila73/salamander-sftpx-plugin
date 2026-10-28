@@ -816,6 +816,10 @@ void CSftpTransferProgressDlg::SetSyncWait()
 // dialog that has no worker yet; the attach then posts the missed update/finish.
 // Returns 1 = started and attached, 0 = Start failed (worker attached, dialog owns it),
 // -1 = the dialog was destroyed meanwhile (worker stopped and deleted here).
+static int SftpStartAndAttach(CSftpTransferWorker* worker, CSftpTransferProgressDlg* dlg, const CSftpProfile& profile);
+static BOOL SftpRunWorkerSync(CSftpTransferWorker* worker, CSftpTransferProgressDlg* dlg,
+                              const CSftpProfile& profile, HWND parent);
+
 static int SftpStartAndAttach(CSftpTransferWorker* worker, CSftpTransferProgressDlg* dlg, const CSftpProfile& profile)
 {
     HWND hDlg = dlg->HWindow;
@@ -4579,10 +4583,16 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
 
     dlg->SetFS(this);
     RegisterTransferDlg(dlg);
-    SftpStartAndAttach(worker, dlg, Profile);
-
     targetPath[0] = 0;
     cancelOrHandlePath = FALSE;
+    if (mode == 5)
+    {
+        // drag&drop: the drop target (e.g. another FS plugin staging via %TEMP%) takes the files
+        // as soon as we return, so the download must be complete by then
+        cancelOrHandlePath = SftpRunWorkerSync(worker, dlg, Profile, parent);
+        return TRUE;
+    }
+    SftpStartAndAttach(worker, dlg, Profile);
     return TRUE;
 }
 
@@ -4813,6 +4823,17 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
 
     // Synchronous: Salamander deletes temp sources / closes this FS right after we return, so the
     // dialog must not know the FS (no SetFS / RegisterTransferDlg) and we wait for the worker.
+    BOOL failed = SftpRunWorkerSync(worker, dlg, Profile, parent);
+    if (invalidPathOrCancel != NULL)
+        *invalidPathOrCancel = failed;
+    return TRUE;
+}
+
+// Starts the worker and waits for it like a modal dialog. Returns TRUE if the transfer failed,
+// was cancelled or could not start.
+static BOOL SftpRunWorkerSync(CSftpTransferWorker* worker, CSftpTransferProgressDlg* dlg,
+                              const CSftpProfile& profile, HWND parent)
+{
     std::shared_ptr<CSftpWorkerCompletion> done = std::make_shared<CSftpWorkerCompletion>();
     worker->SetCompletion(done);
     dlg->SetSyncWait();
@@ -4821,16 +4842,10 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
         // never started: the dialog still needs the worker and a finish to become closable
         dlg->AttachWorker(worker, true);
         PostMessage(dlg->HWindow, WM_APP_SFTP_WORKER_FINISHED, 0, 0);
-        if (invalidPathOrCancel != NULL)
-            *invalidPathOrCancel = TRUE;
         return TRUE;
     }
-    if (SftpStartAndAttach(worker, dlg, Profile) != 1)
-    {
-        if (invalidPathOrCancel != NULL)
-            *invalidPathOrCancel = TRUE;
+    if (SftpStartAndAttach(worker, dlg, profile) != 1)
         return TRUE;
-    }
 
     // Behave like a modal dialog: Salamander's main window stays disabled until the worker is
     // done, so the user cannot re-enter Salamander code whose caller frame is still on the stack.
@@ -4872,9 +4887,7 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
     if (quitCode != -1)
         PostQuitMessage(quitCode);
 
-    if (invalidPathOrCancel != NULL)
-        *invalidPathOrCancel = (WaitForSingleObject(done->Event, 0) != WAIT_OBJECT_0 || done->Failed != 0) ? TRUE : FALSE;
-    return TRUE;
+    return (WaitForSingleObject(done->Event, 0) != WAIT_OBJECT_0 || done->Failed != 0) ? TRUE : FALSE;
 }
 
 // dialog for entering octal permissions (chmod)
