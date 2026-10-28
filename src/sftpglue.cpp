@@ -299,10 +299,11 @@ bool SftpParseHostSpec(const char* userPart, char* user, int userSize, char* hos
     if (hostpart[0] == '[')
     {
         char* close = strchr(hostpart, ']');
-        if (close == NULL || close == hostpart + 1 || strchr(hostpart + 1, ':') == NULL ||
-            (close[1] != 0 && close[1] != ':'))
+        if (close == NULL || close == hostpart + 1 || (close[1] != 0 && close[1] != ':'))
             return false;
         *close = 0;
+        if (strchr(hostpart + 1, ':') == NULL) // an IPv6 literal contains ':' (only look inside the brackets)
+            return false;
         hostpart++; // drop '['
         colon = (close[1] == ':') ? close + 1 : NULL; // the ':' before the port, as in the plain case
     }
