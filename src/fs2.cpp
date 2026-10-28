@@ -4316,17 +4316,8 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                 return FALSE;
             }
             diskPath = FALSE;
-            // trim mask (*.* etc.) from the target path, keep directory
-            char* lastSep = target + strlen(target);
-            while (lastSep > target && lastSep[-1] != '\\' && lastSep[-1] != '/')
-                lastSep--;
-            if (strchr(lastSep, '*') != NULL || strchr(lastSep, '?') != NULL)
-            {
-                if (lastSep > target)
-                    lastSep[-1] = 0;
-                else
-                    target[0] = 0;
-            }
+            // the mask (*.* etc.) is trimmed from remoteTargetDir below, after the host is
+            // stripped: a literal '\' in a remote directory name is not a separator
         }
         else // mode 5 (drag&drop)
         {
@@ -4398,6 +4389,21 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
         }
 
         SftpFixTypedPath(remoteTargetDir); // only a leading '\\' makes it a typed Windows path
+        if (mode == 2)
+        {
+            // trim mask (*.* etc.) from the target path, keep directory; split on '/' only
+            char* lastSep = strrchr(remoteTargetDir, '/');
+            char* last = lastSep != NULL ? lastSep + 1 : remoteTargetDir;
+            if (strchr(last, '*') != NULL || strchr(last, '?') != NULL)
+            {
+                if (lastSep == remoteTargetDir)
+                    remoteTargetDir[1] = 0; // keep root "/"
+                else if (lastSep != NULL)
+                    *lastSep = 0;
+                else
+                    remoteTargetDir[0] = 0;
+            }
+        }
         SftpNormalize(remoteTargetDir);
 
         bool isSameServer = true;
@@ -4486,6 +4492,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
         int indexF = 0;
         BOOL isDirF = FALSE;
         BOOL okF = TRUE;
+        BOOL failedF = FALSE; // some item failed but the user chose to continue
         const CFileData* ff;
 
         SftpProgressBegin(parent, false, Path, remoteTargetDir, totalFilesF, 0, sourceConnName, pTargetConn, targetConnName);
@@ -4529,6 +4536,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                     okF = FALSE;
                     break;
                 }
+                failedF = TRUE;
             }
             else if (!copy && g_SkippedCount == 0)
                 SftpDeleteRecursive(Conn, src, isDirF != 0); // Move -> delete source (only if nothing was skipped)
@@ -4555,10 +4563,10 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
         SalamanderGeneral->PostChangeOnPathNotification(fsfull2, FALSE);
         if (!copy)
             SalamanderGeneral->PostChangeOnPathNotification(Path, TRUE);
-        if (okF)
+        if (okF && !failedF)
             targetPath[0] = 0;
         else
-            cancelOrHandlePath = TRUE;
+            cancelOrHandlePath = TRUE; // error: keep the selection
         return TRUE;
     }
 
