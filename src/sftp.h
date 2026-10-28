@@ -604,21 +604,25 @@ protected:
     void FlushDataToControls();
 };
 
+// Runs the modeless transfer dialog in its own thread. Start() takes ownership of the
+// dialog: on failure the dialog is already deleted (the caller deletes only this object);
+// on success this object belongs to the thread and deletes itself when the dialog closes,
+// and the dialog (ooStandard) is deleted by winlib in WM_DESTROY.
 class CSftpProgressDlgThread
 {
 protected:
-    HANDLE ThreadHandle;
-    unsigned ThreadId;
     CSftpTransferProgressDlg* Dlg;
     HWND ParentWnd;
-    HANDLE InitEvent;
+    HANDLE InitEvent; // valid only until the thread signals it (owned by Start())
+    HWND* InitResult; // Start()'s local receiving the created HWND
+    BOOL DlgDestroyed; // WM_DESTROY ran, winlib has deleted Dlg
 
 public:
     CSftpProgressDlgThread(CSftpTransferProgressDlg* dlg, HWND parent);
-    ~CSftpProgressDlgThread();
+    ~CSftpProgressDlgThread() {}
 
     BOOL Start();
-    void WaitForExit(DWORD timeoutMs = INFINITE);
+    void NotifyDlgDestroyed() { DlgDestroyed = TRUE; } // called from the dialog's WM_DESTROY
 
 protected:
     static unsigned __stdcall ThreadProc(void* param);

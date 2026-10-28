@@ -464,44 +464,49 @@ CSftpProgressDlgThread::CSftpProgressDlgThread(CSftpTransferProgressDlg* dlg, HW
 {
     Dlg = dlg;
     ParentWnd = parent;
-    ThreadHandle = NULL;
-    ThreadId = 0;
-    InitEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    InitEvent = NULL;
+    InitResult = NULL;
+    DlgDestroyed = FALSE;
     if (Dlg != NULL)
         Dlg->SetDlgThread(this);
 }
 
-CSftpProgressDlgThread::~CSftpProgressDlgThread()
-{
-    WaitForExit(1000);
-    if (ThreadHandle != NULL)
-    {
-        CloseHandle(ThreadHandle);
-        ThreadHandle = NULL;
-    }
-    if (InitEvent != NULL)
-    {
-        CloseHandle(InitEvent);
-        InitEvent = NULL;
-    }
-}
-
 BOOL CSftpProgressDlgThread::Start()
 {
-    ResetEvent(InitEvent);
-    ThreadHandle = (HANDLE)_beginthreadex(NULL, 0, ThreadProc, this, 0, &ThreadId);
-    if (ThreadHandle == NULL)
-        return FALSE;
-    WaitForSingleObject(InitEvent, 5000);
-    return (Dlg != NULL && Dlg->HWindow != NULL);
-}
-
-void CSftpProgressDlgThread::WaitForExit(DWORD timeoutMs)
-{
-    if (ThreadHandle != NULL)
+    // only locals are used after the thread signals: on success it may delete 'this' at any time
+    HWND created = NULL;
+    HANDLE initEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    HANDLE thread = NULL;
+    if (initEvent != NULL)
     {
-        WaitForSingleObject(ThreadHandle, timeoutMs);
+        InitEvent = initEvent;
+        InitResult = &created;
+        thread = (HANDLE)_beginthreadex(NULL, 0, ThreadProc, this, 0, NULL);
     }
+    if (thread == NULL)
+    {
+        if (initEvent != NULL)
+            CloseHandle(initEvent);
+        delete Dlg;
+        Dlg = NULL;
+        return FALSE;
+    }
+
+    // no timeout: the dialog must not be deleted (here, in Run() or by winlib) while the
+    // thread is still creating it; keep handling sent messages so a cross-thread SendMessage
+    // to our windows during dialog creation cannot deadlock
+    while (MsgWaitForMultipleObjects(1, &initEvent, FALSE, INFINITE, QS_SENDMESSAGE) == WAIT_OBJECT_0 + 1)
+    {
+        MSG msg;
+        PeekMessage(&msg, NULL, 0, 0, PM_NOREMOVE | PM_QS_SENDMESSAGE);
+    }
+    WaitForSingleObject(initEvent, INFINITE); // in case MsgWaitForMultipleObjects failed
+    CloseHandle(initEvent);
+
+    if (created == NULL)
+        WaitForSingleObject(thread, INFINITE); // the thread is leaving, it did not take ownership
+    CloseHandle(thread);
+    return created != NULL;
 }
 
 unsigned __stdcall CSftpProgressDlgThread::ThreadProc(void* param)
@@ -514,31 +519,36 @@ unsigned __stdcall CSftpProgressDlgThread::ThreadProc(void* param)
 
 unsigned CSftpProgressDlgThread::Run()
 {
-    if (Dlg == NULL)
+    HWND hDlg = (Dlg != NULL) ? Dlg->Create() : NULL;
+    if (DlgDestroyed)
+        hDlg = NULL; // destroyed during creation: never publish a handle of a deleted dialog
+    if (hDlg == NULL && Dlg != NULL)
     {
-        SetEvent(InitEvent);
-        return 0;
+        // creation failed; if WM_INITDIALOG destroyed the window, winlib has already deleted Dlg
+        if (!DlgDestroyed)
+            delete Dlg;
+        Dlg = NULL;
     }
-
-    HWND hDlg = Dlg->Create();
-    SetEvent(InitEvent);
+    *InitResult = hDlg;
+    SetEvent(InitEvent); // after this, InitEvent and InitResult belong to a finished Start()
 
     if (hDlg == NULL)
-    {
         return 0;
-    }
 
+    // the dialog object is deleted in WM_DESTROY (ooStandard), so do not touch Dlg from here on;
+    // messages still queued after that must not dereference it
+    Dlg = NULL;
     MSG msg;
     while (GetMessage(&msg, NULL, 0, 0))
     {
-        if (Dlg->HWindow == NULL || !IsWindow(Dlg->HWindow) || !IsDialogMessage(Dlg->HWindow, &msg))
+        if (!IsWindow(hDlg) || !IsDialogMessage(hDlg, &msg))
         {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
     }
 
-    _endthreadex(0);
+    delete this;
     return 0;
 }
 
@@ -1532,6 +1542,8 @@ INT_PTR CSftpTransferProgressDlg::DialogProc(UINT uMsg, WPARAM wParam, LPARAM lP
             FS->UnregisterTransferDlg(this);
         }
         FS = NULL;
+        if (DlgThread != NULL)
+            DlgThread->NotifyDlgDestroyed();
         PostQuitMessage(0);
         break;
     }
@@ -4442,7 +4454,8 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
     {
         if (dlgThread != NULL)
             delete dlgThread;
-        delete dlg;
+        else
+            delete dlg; // Start() never ran, so the dialog is still ours
         delete worker;
         cancelOrHandlePath = TRUE;
         return FALSE;
@@ -4563,7 +4576,8 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
     {
         if (dlgThread != NULL)
             delete dlgThread;
-        delete dlg;
+        else
+            delete dlg; // Start() never ran, so the dialog is still ours
         delete worker;
         if (invalidPathOrCancel != NULL)
             *invalidPathOrCancel = TRUE;
