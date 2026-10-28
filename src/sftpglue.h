@@ -24,13 +24,15 @@ struct CSftpProfile
 
 // Saved server (profile in connection manager).
 #define SFTP_MAX_PROFILES 100
+#define SFTP_MAX_ENCPASSWORD 1024 // max size of the encrypted password blob (the password itself is max 255 chars)
 struct CSftpSavedProfile
 {
     char Name[128]; // display name in list
     char Host[256];
     int Port;
     char User[128];
-    char Password[256];
+    BYTE EncPassword[SFTP_MAX_ENCPASSWORD]; // blob from Salamander password manager (AES or scrambled), never plaintext
+    int EncPasswordSize;                    // 0 = no stored password
     char KeyFile[260];
     char Path[260];
     char SftpServer[260];
@@ -44,22 +46,25 @@ extern CSftpSavedProfile SftpProfiles[SFTP_MAX_PROFILES];
 extern int SftpProfileCount;
 extern char SftpDefaultSession[128]; // name of profile to auto-fill in connect dialog
 
-inline void SftpProfileFromSaved(CSftpProfile& dst, const CSftpSavedProfile& src)
-{
-    lstrcpynA(dst.Name, src.Name, sizeof(dst.Name));
-    lstrcpynA(dst.Host, src.Host, sizeof(dst.Host));
-    dst.Port = src.Port;
-    lstrcpynA(dst.User, src.User, sizeof(dst.User));
-    lstrcpynA(dst.Password, src.Password, sizeof(dst.Password));
-    lstrcpynA(dst.KeyFile, src.KeyFile, sizeof(dst.KeyFile));
-    lstrcpynA(dst.Path, src.Path, sizeof(dst.Path));
-    lstrcpynA(dst.SftpServer, src.SftpServer, sizeof(dst.SftpServer));
-    dst.UseCompression = src.UseCompression;
-    dst.Protocol = src.Protocol;
-    dst.ScpFallback = src.ScpFallback;
-    dst.ExecOnEnter = src.ExecOnEnter;
-    dst.Valid = true;
-}
+// Password manager helpers (main thread only; background threads use the plaintext that was
+// already copied into CSftpProfile). 'parent' is the owner of the master password prompt.
+// Decrypts the stored password into 'out'; asks for the master password if needed and 'allowAsk'.
+// Returns false if a stored password exists but cannot be decrypted (MP refused/wrong); 'out' is
+// then empty. No stored password -> true with empty 'out'. Caller must SecureZeroMemory 'out'.
+bool SftpSavedGetPassword(HWND parent, CSftpSavedProfile& src, char* out, int outSize, bool allowAsk);
+// Stores 'plain' as encrypted blob (AES if master password is in use, else scrambled).
+// Returns false (blob unchanged) if the master password is needed but was not entered.
+bool SftpSavedSetPassword(HWND parent, CSftpSavedProfile& dst, const char* plain);
+// True if the stored password decrypts (never asks for the master password) and equals 'plain'.
+bool SftpSavedPasswordEquals(CSftpSavedProfile& src, const char* plain);
+// Scrambles a legacy plaintext registry password into the blob (needs no master password).
+void SftpSavedSetLegacyPassword(CSftpSavedProfile& dst, const char* legacyPlain);
+// PME_MASTERPASSWORD* handling: converts all blobs; returns false if some could not be decrypted.
+bool SftpSavedReencryptAll(HWND parent, int event);
+
+// Fills connection profile from the saved one; decrypts the password (may ask for the master
+// password; if refused the password stays empty and the normal authentication prompt is used).
+void SftpProfileFromSaved(HWND parent, CSftpProfile& dst, CSftpSavedProfile& src);
 
 #define SFTP_MAX_FOLDERS 64
 extern char SftpFolders[SFTP_MAX_FOLDERS][128]; // folder names (including empty)
@@ -99,6 +104,8 @@ void SftpCalcSize(HWND parent, CPluginFSInterface* fs, const char* remoteDir, in
 
 // Save configuration immediately to registry
 void SaveSftpConfigurationImmediately(HWND parent);
+// saves the configuration now if LoadConfiguration converted legacy plaintext passwords (main thread)
+void SftpFlushPendingConfigSave(HWND parent);
 
 // Wrap command line execution with custom sftp-server prefix (e.g. sudo -u hop)
 void WrapCommandWithSftpServerPrefix(const char* sftpServer, const char* rawCmd, char* outBuf, size_t outSize);

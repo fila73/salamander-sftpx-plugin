@@ -2412,7 +2412,7 @@ static BOOL SftpParseHostInto(CSftpProfile& prof, CSftpConnection& conn, const c
                 (user[0] == 0 || _stricmp(user, SftpProfiles[i].User) == 0) &&
                 port == (SftpProfiles[i].Port > 0 ? SftpProfiles[i].Port : 22))
             {
-                SftpProfileFromSaved(fresh, SftpProfiles[i]); // its own credentials, sent only to its own host
+                SftpProfileFromSaved(SalamanderGeneral->GetMsgBoxParent(), fresh, SftpProfiles[i]); // its own credentials, sent only to its own host
                 break;
             }
         }
@@ -2425,6 +2425,7 @@ static BOOL SftpParseHostInto(CSftpProfile& prof, CSftpConnection& conn, const c
         }
         fresh.Port = port;
         prof = fresh;
+        SecureZeroMemory(&fresh, sizeof(fresh)); // may hold a decrypted password
         conn.Disconnect(); // different server -> new connection
     }
     return TRUE;
@@ -4474,7 +4475,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                         (targetUser[0] == 0 || _stricmp(SftpProfiles[i].User, targetUser) == 0) &&
                         (SftpProfiles[i].Port > 0 ? SftpProfiles[i].Port : 22) == targetPort)
                     {
-                        SftpProfileFromSaved(targetProfile, SftpProfiles[i]);
+                        SftpProfileFromSaved(parent, targetProfile, SftpProfiles[i]);
                         break;
                     }
                 }
@@ -4771,7 +4772,7 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
                 (SftpProfiles[i].Port > 0 ? SftpProfiles[i].Port : 22) == specPort &&
                 (specUser[0] == 0 || _stricmp(SftpProfiles[i].User, specUser) == 0))
             {
-                SftpProfileFromSaved(fresh_prof, SftpProfiles[i]);
+                SftpProfileFromSaved(parent, fresh_prof, SftpProfiles[i]);
                 break;
             }
         }
@@ -4786,6 +4787,7 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
             fresh_prof.Port = 22;
         Conn.Disconnect();
         Profile = fresh_prof;
+        SecureZeroMemory(&fresh_prof, sizeof(fresh_prof)); // may hold a decrypted password
     }
     else if (specHost[0] != 0 &&
              (_stricmp(specHost, Profile.Host) != 0 || specPort != (Profile.Port > 0 ? Profile.Port : 22) ||

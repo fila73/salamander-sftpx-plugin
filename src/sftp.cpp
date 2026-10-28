@@ -70,6 +70,9 @@ int SftpLeavePanelAction = 0; // 0 = ask, 1 = always disconnect, 2 = always keep
 //                3 - third configuration version (extension "dmp2" added)
 //                4 - fourth configuration version (changed extension "dmp" (collides with minidumps) to "dop" and "dmp2" to "dop2")
 
+// set when a legacy plaintext password was converted during LoadConfiguration; the registry is
+// rewritten (plaintext removed) at the first main-thread opportunity, see SftpFlushPendingConfigSave()
+static bool SftpLegacyPasswordsConverted = false;
 int ConfigVersion = 0;           // version of the configuration loaded from the registry (see the descriptions above)
 #define CURRENT_CONFIG_VERSION 4 // current configuration version (stored in the registry when the plugin unloads)
 const char* CONFIG_VERSION = "Version";
@@ -840,7 +843,23 @@ CPluginInterface::LoadConfiguration(HWND parent, HKEY regKey, CSalamanderRegistr
                     registry->GetValue(pk, "Port", REG_DWORD, &port, sizeof(DWORD));
                     p.Port = (int)port;
                     registry->GetValue(pk, "User", REG_SZ, p.User, sizeof(p.User));
-                    registry->GetValue(pk, "Password", REG_SZ, p.Password, sizeof(p.Password));
+                    // password: encrypted blob; a legacy plaintext "Password" value is converted
+                    // (and removed from the registry on the next save)
+                    DWORD encSize = 0;
+                    if (registry->GetSize(pk, "EncryptedPassword", REG_BINARY, encSize) && encSize > 0 &&
+                        encSize <= SFTP_MAX_ENCPASSWORD &&
+                        registry->GetValue(pk, "EncryptedPassword", REG_BINARY, p.EncPassword, encSize))
+                        p.EncPasswordSize = (int)encSize;
+                    else
+                    {
+                        char legacy[256] = "";
+                        if (registry->GetValue(pk, "Password", REG_SZ, legacy, sizeof(legacy)))
+                        {
+                            SftpSavedSetLegacyPassword(p, legacy);
+                            SftpLegacyPasswordsConverted = true;
+                        }
+                        SecureZeroMemory(legacy, sizeof(legacy));
+                    }
                     registry->GetValue(pk, "KeyFile", REG_SZ, p.KeyFile, sizeof(p.KeyFile));
                     registry->GetValue(pk, "Path", REG_SZ, p.Path, sizeof(p.Path));
                     registry->GetValue(pk, "SftpServer", REG_SZ, p.SftpServer, sizeof(p.SftpServer));
@@ -927,7 +946,13 @@ CPluginInterface::SaveConfiguration(HWND parent, HKEY regKey, CSalamanderRegistr
                 DWORD port = (DWORD)SftpProfiles[i].Port;
                 registry->SetValue(pk, "Port", REG_DWORD, &port, sizeof(DWORD));
                 registry->SetValue(pk, "User", REG_SZ, SftpProfiles[i].User, -1);
-                registry->SetValue(pk, "Password", REG_SZ, SftpProfiles[i].Password, -1);
+                // only the encrypted blob is stored (kept as-is even if the master password was not entered)
+                if (SftpProfiles[i].EncPasswordSize > 0)
+                    registry->SetValue(pk, "EncryptedPassword", REG_BINARY, SftpProfiles[i].EncPassword,
+                                       (DWORD)SftpProfiles[i].EncPasswordSize);
+                else
+                    registry->DeleteValue(pk, "EncryptedPassword");
+                registry->DeleteValue(pk, "Password"); // remove legacy plaintext value
                 registry->SetValue(pk, "KeyFile", REG_SZ, SftpProfiles[i].KeyFile, -1);
                 registry->SetValue(pk, "Path", REG_SZ, SftpProfiles[i].Path, -1);
                 registry->SetValue(pk, "SftpServer", REG_SZ, SftpProfiles[i].SftpServer, -1);
@@ -943,6 +968,17 @@ CPluginInterface::SaveConfiguration(HWND parent, HKEY regKey, CSalamanderRegistr
                 registry->CloseKey(pk);
             }
         }
+        // delete stale subkeys left by an earlier, larger profile list (they may hold old passwords)
+        for (int i = SftpProfileCount; i < 10000; i++)
+        {
+            char idx[16];
+            sprintf(idx, "%d", i);
+            HKEY pk;
+            if (!registry->OpenKey(serversKey, idx, pk))
+                break;
+            registry->CloseKey(pk);
+            registry->DeleteKey(serversKey, idx);
+        }
         registry->CloseKey(serversKey);
     }
 }
@@ -957,6 +993,18 @@ void SaveSftpConfigurationImmediately(HWND parent)
 {
     if (SalamanderGeneral != NULL)
         SalamanderGeneral->CallLoadOrSaveConfiguration(FALSE, SftpLoadOrSaveConfigurationCallback, (void*)parent);
+}
+
+// CallLoadOrSaveConfiguration is not documented as re-entrant from inside LoadConfiguration (the
+// plugin's registry key is being read), so LoadConfiguration only sets a flag and the save is done
+// here, from main-thread entry points that run after the load (Connect, connect dialog).
+void SftpFlushPendingConfigSave(HWND parent)
+{
+    if (SftpLegacyPasswordsConverted)
+    {
+        SftpLegacyPasswordsConverted = false;
+        SaveSftpConfigurationImmediately(parent);
+    }
 }
 
 void WINAPI
@@ -999,6 +1047,8 @@ CPluginInterface::Connect(HWND parent, CSalamanderConnectAbstract* salamander)
     salamander->SetChangeDriveMenuItem("\tSFTP", 0);
     salamander->SetPluginIcon(0);
     salamander->SetPluginMenuAndToolbarIcon(0);
+
+    SftpFlushPendingConfigSave(parent);
 }
 
 void WINAPI
@@ -1031,6 +1081,17 @@ void WINAPI
 CPluginInterface::PasswordManagerEvent(HWND parent, int event)
 {
     TRACE_I("PasswordManagerEvent(): event=" << event);
+    if (event == PME_MASTERPASSWORDCREATED || event == PME_MASTERPASSWORDCHANGED || event == PME_MASTERPASSWORDREMOVED)
+    {
+        if (!SftpSavedReencryptAll(parent, event))
+        {
+            // at least one password could not be decrypted (encrypted with another master password)
+            SalamanderGeneral->SalMessageBox(parent, "Some saved SFTP passwords could not be decrypted and were left unchanged.",
+                                             LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
+        }
+        // persist at once so that a crash cannot leave blobs of the old master password in the registry
+        SaveSftpConfigurationImmediately(parent);
+    }
 }
 
 CPluginInterfaceForArchiverAbstract* WINAPI
