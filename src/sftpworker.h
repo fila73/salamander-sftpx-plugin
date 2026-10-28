@@ -158,7 +158,7 @@ public:
 private:
     static unsigned __stdcall ThreadEntryPoint(void* param);
     void ThreadLoop();
-    void SignalCompletion();
+    void SignalCompletion(bool forceFail = false, bool noLock = false);
 
     bool ExecuteTask(CSftpTransferTask& task);
     bool DoDownloadRecursive(const std::string& remote, const std::string& local, bool isDir, bool deleteSource = false);

@@ -546,6 +546,7 @@ protected:
     CPluginFSInterface* FS;
     BOOL IsBackground;
     HWND CenterToWnd;
+    BOOL SyncWait; // caller waits synchronously with the main window disabled: keep it disabled, no Background
     char ConnName[128];
     char FromConnName[128];
     char ToConnName[128];
@@ -582,6 +583,7 @@ public:
     BOOL GetWantCancel();
 
     void SetFS(CPluginFSInterface* fs) { FS = fs; }
+    void SetSyncWait();
     void AttachWorker(CSftpTransferWorker* worker, bool ownsWorker = false);
     virtual void DetachWorker() override;
     void UpdateFromWorker();

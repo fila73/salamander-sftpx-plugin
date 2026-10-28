@@ -381,6 +381,7 @@ CSftpTransferProgressDlg::CSftpTransferProgressDlg(HWND parent, CObjectOrigin or
     : CCommonDialog(HLanguage, IDD_TRANSFERDLG, NULL, origin)
 {
     CenterToWnd = parent != NULL ? parent : (SalamanderGeneral != NULL ? SalamanderGeneral->GetMainWindowHWND() : NULL);
+    SyncWait = FALSE;
     FileProgressBar = NULL;
     TotalProgressBar = NULL;
     WantCancel = FALSE;
@@ -801,6 +802,38 @@ void CSftpTransferProgressDlg::UpdateTotalProgress(int fileIndex, unsigned __int
     }
     TextCacheIsDirty = TRUE;
     ProgressCacheIsDirty = TRUE;
+}
+
+void CSftpTransferProgressDlg::SetSyncWait()
+{
+    SyncWait = TRUE;
+    if (HWindow != NULL)
+        EnableWindow(GetDlgItem(HWindow, IDB_BACKGROUND), FALSE);
+}
+
+// Starts the worker first and only then hands it to the dialog (which may delete it from its own
+// thread). The worker gets no dialog HWND before the attach, so no notification is lost on a
+// dialog that has no worker yet; the attach then posts the missed update/finish.
+// Returns 1 = started and attached, 0 = Start failed (worker attached, dialog owns it),
+// -1 = the dialog was destroyed meanwhile (worker stopped and deleted here).
+static int SftpStartAndAttach(CSftpTransferWorker* worker, CSftpTransferProgressDlg* dlg, const CSftpProfile& profile)
+{
+    HWND hDlg = dlg->HWindow;
+    BOOL started = worker->Start(profile, NULL);
+    if (!IsWindow(hDlg))
+    {
+        worker->Stop();
+        delete worker;
+        return -1;
+    }
+    dlg->AttachWorker(worker, true);
+    if (started)
+    {
+        PostMessage(hDlg, WM_APP_SFTP_WORKER_UPDATE, 0, 0);
+        if (!worker->IsRunning())
+            PostMessage(hDlg, WM_APP_SFTP_WORKER_FINISHED, 0, 0);
+    }
+    return started ? 1 : 0;
 }
 
 void CSftpTransferProgressDlg::AttachWorker(CSftpTransferWorker* worker, bool ownsWorker)
@@ -1804,7 +1837,7 @@ INT_PTR CSftpTransferProgressDlg::DialogProc(UINT uMsg, WPARAM wParam, LPARAM lP
 
         if (!hasError && closeOnFinish && !snap.Cancelled)
         {
-            if (CenterToWnd != NULL)
+            if (CenterToWnd != NULL && !SyncWait)
                 EnableWindow(CenterToWnd, TRUE);
             DestroyWindow(HWindow);
             return TRUE;
@@ -1904,6 +1937,8 @@ INT_PTR CSftpTransferProgressDlg::DialogProc(UINT uMsg, WPARAM wParam, LPARAM lP
         WORD cmdId = LOWORD(wParam);
         if (cmdId == IDB_BACKGROUND)
         {
+            if (SyncWait)
+                return TRUE; // the caller is blocked waiting for us
             IsBackground = TRUE;
             if (CenterToWnd != NULL)
                 EnableWindow(CenterToWnd, TRUE);
@@ -1960,7 +1995,7 @@ INT_PTR CSftpTransferProgressDlg::DialogProc(UINT uMsg, WPARAM wParam, LPARAM lP
         {
             if (OperationFinished)
             {
-                if (CenterToWnd != NULL)
+                if (CenterToWnd != NULL && !SyncWait)
                     EnableWindow(CenterToWnd, TRUE);
                 DestroyWindow(HWindow);
                 return TRUE;
@@ -2370,7 +2405,7 @@ static void SftpParseHostInto(CSftpProfile& prof, CSftpConnection& conn, const c
     buf[len] = 0;
     char user[128] = "", host[256] = "";
     char* hostpart = buf;
-    char* at = strchr(buf, '@');
+    char* at = strrchr(buf, '@'); // the user name may contain '@'
     if (at != NULL)
     {
         *at = 0;
@@ -4294,7 +4329,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                 char hostBuf[320];
                 memcpy(hostBuf, hostStart, hLen);
                 hostBuf[hLen] = 0;
-                char* at = strchr(hostBuf, '@');
+                char* at = strrchr(hostBuf, '@'); // the user name may contain '@'
                 char* hpart = hostBuf;
                 if (at != NULL)
                 {
@@ -4329,7 +4364,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
         {
             if (_stricmp(targetHost, Profile.Host) != 0)
                 isSameServer = false;
-            else if (targetPort > 0 && targetPort != Profile.Port)
+            else if (targetPort > 0 && targetPort != (Profile.Port > 0 ? Profile.Port : 22))
                 isSameServer = false;
             else if (targetUser[0] != 0 && Profile.User[0] != 0 && _stricmp(targetUser, Profile.User) != 0)
                 isSameServer = false;
@@ -4355,7 +4390,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                 CPluginFSInterface* pFS = static_cast<CPluginFSInterface*>(fsList[i]);
                 if (_stricmp(pFS->Profile.Host, targetHost) == 0 &&
                     (targetUser[0] == 0 || _stricmp(pFS->Profile.User, targetUser) == 0) &&
-                    (targetPort == 0 || pFS->Profile.Port == targetPort))
+                    (targetPort == 0 || (pFS->Profile.Port > 0 ? pFS->Profile.Port : 22) == targetPort))
                 {
                     targetProfile = pFS->Profile;
                     if (pFS->Conn.IsConnected())
@@ -4371,7 +4406,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                 {
                     if (_stricmp(SftpProfiles[i].Host, targetHost) == 0 &&
                         (targetUser[0] == 0 || _stricmp(SftpProfiles[i].User, targetUser) == 0) &&
-                        (targetPort == 0 || SftpProfiles[i].Port == targetPort))
+                        (targetPort == 0 || (SftpProfiles[i].Port > 0 ? SftpProfiles[i].Port : 22) == targetPort))
                     {
                         SftpProfileFromSaved(targetProfile, SftpProfiles[i]);
                         break;
@@ -4546,9 +4581,8 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
     }
 
     dlg->SetFS(this);
-    dlg->AttachWorker(worker, true);
     RegisterTransferDlg(dlg);
-    worker->Start(Profile, dlg->HWindow);
+    SftpStartAndAttach(worker, dlg, Profile);
 
     targetPath[0] = 0;
     cancelOrHandlePath = FALSE;
@@ -4595,7 +4629,7 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
             memcpy(hostBuf, hostStart, hLen);
             hostBuf[hLen] = 0;
             char* hpart = hostBuf;
-            char* at = strchr(hostBuf, '@');
+            char* at = strrchr(hostBuf, '@'); // the user name may contain '@'
             if (at != NULL)
             {
                 *at = 0;
@@ -4666,11 +4700,13 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
             fresh_prof.Port = specPort;
             fresh_prof.Valid = true;
         }
+        if (fresh_prof.Port <= 0)
+            fresh_prof.Port = 22;
         Conn.Disconnect();
         Profile = fresh_prof;
     }
     else if (specHost[0] != 0 &&
-             (_stricmp(specHost, Profile.Host) != 0 || specPort != Profile.Port ||
+             (_stricmp(specHost, Profile.Host) != 0 || specPort != (Profile.Port > 0 ? Profile.Port : 22) ||
               (specUser[0] != 0 && _stricmp(specUser, Profile.User) != 0)))
     {
         // this FS is connected elsewhere: ask Salamander for another FS
@@ -4773,9 +4809,8 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
     if (!sync)
     {
         dlg->SetFS(this);
-        dlg->AttachWorker(worker, true);
         RegisterTransferDlg(dlg);
-        worker->Start(Profile, dlg->HWindow);
+        SftpStartAndAttach(worker, dlg, Profile);
         return TRUE;
     }
 
@@ -4783,13 +4818,25 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
     // dialog must not know the FS (no SetFS / RegisterTransferDlg) and we wait for the worker.
     std::shared_ptr<CSftpWorkerCompletion> done = std::make_shared<CSftpWorkerCompletion>();
     worker->SetCompletion(done);
-    dlg->AttachWorker(worker, true); // the dialog owns the worker and may delete it once it finishes
-    if (done->Event == NULL || !worker->Start(Profile, dlg->HWindow))
+    dlg->SetSyncWait();
+    if (done->Event == NULL || SftpStartAndAttach(worker, dlg, Profile) != 1)
     {
         if (invalidPathOrCancel != NULL)
             *invalidPathOrCancel = TRUE;
         return TRUE;
     }
+
+    // Behave like a modal dialog: Salamander's main window stays disabled until the worker is
+    // done, so the user cannot re-enter Salamander code whose caller frame is still on the stack.
+    // The progress dialog does not re-enable it in sync mode (SyncWait).
+    HWND mainWnd = SalamanderGeneral->GetMainWindowHWND();
+    HWND ownerWnd = (parent != NULL) ? GetAncestor(parent, GA_ROOTOWNER) : NULL;
+    BOOL mainWasEnabled = (mainWnd != NULL && IsWindowEnabled(mainWnd));
+    BOOL ownerWasEnabled = (ownerWnd != NULL && ownerWnd != mainWnd && IsWindowEnabled(ownerWnd));
+    if (mainWasEnabled)
+        EnableWindow(mainWnd, FALSE);
+    if (ownerWasEnabled)
+        EnableWindow(ownerWnd, FALSE);
 
     // pump messages: the dialog thread may SendMessage to 'parent'
     int quitCode = -1;
@@ -4812,6 +4859,10 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
             }
         }
     }
+    if (ownerWasEnabled)
+        EnableWindow(ownerWnd, TRUE);
+    if (mainWasEnabled)
+        EnableWindow(mainWnd, TRUE);
     if (quitCode != -1)
         PostQuitMessage(quitCode);
 

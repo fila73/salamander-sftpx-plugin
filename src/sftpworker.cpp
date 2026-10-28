@@ -174,7 +174,10 @@ void CSftpTransferWorker::Stop()
     DlgHwnd = NULL;
 
     if (!ThreadHandle)
+    {
+        SignalCompletion(true); // never started: don't leave a synchronous waiter hanging
         return;
+    }
 
     if (Initialized)
     {
@@ -188,19 +191,22 @@ void CSftpTransferWorker::Stop()
     if (RunEvent)
         SetEvent(RunEvent);
 
+    bool terminated = false;
     if (WaitForSingleObject(ThreadHandle, 5000) == WAIT_TIMEOUT)
     {
         // Thread did not finish in time; terminate as last resort
         TerminateThread(ThreadHandle, 1);
+        terminated = true;
     }
     CloseHandle(ThreadHandle);
     ThreadHandle = NULL;
     ThreadId = 0;
-    SignalCompletion(); // thread was terminated before it could signal
+    // thread was terminated before it could signal; State.Lock may still be held by it
+    SignalCompletion(terminated, terminated);
 
     WorkerConn.Disconnect();
 
-    if (Initialized)
+    if (Initialized && !terminated)
     {
         EnterCriticalSection(&State.Lock);
         State.IsRunning = false;
@@ -321,14 +327,18 @@ void CSftpTransferWorker::GetTasksSnapshot(std::vector<CSftpTransferTask>& outTa
     LeaveCriticalSection(&QueueLock);
 }
 
-void CSftpTransferWorker::SignalCompletion()
+void CSftpTransferWorker::SignalCompletion(bool forceFail, bool noLock)
 {
     std::shared_ptr<CSftpWorkerCompletion> c = Completion;
     if (!c || c->Event == NULL || WaitForSingleObject(c->Event, 0) == WAIT_OBJECT_0)
         return;
-    EnterCriticalSection(&State.Lock);
-    bool failed = State.HasError || State.Cancelled;
-    LeaveCriticalSection(&State.Lock);
+    bool failed = forceFail;
+    if (!noLock)
+    {
+        EnterCriticalSection(&State.Lock);
+        failed = failed || State.HasError || State.Cancelled;
+        LeaveCriticalSection(&State.Lock);
+    }
     InterlockedExchange(&c->Failed, failed ? 1 : 0);
     SetEvent(c->Event);
 }
