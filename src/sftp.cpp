@@ -70,6 +70,9 @@ int SftpLeavePanelAction = 0; // 0 = ask, 1 = always disconnect, 2 = always keep
 //                3 - third configuration version (extension "dmp2" added)
 //                4 - fourth configuration version (changed extension "dmp" (collides with minidumps) to "dop" and "dmp2" to "dop2")
 
+// set when a legacy plaintext password was converted during LoadConfiguration; the registry is
+// rewritten (plaintext removed) at the first main-thread opportunity, see SftpFlushPendingConfigSave()
+static bool SftpLegacyPasswordsConverted = false;
 int ConfigVersion = 0;           // version of the configuration loaded from the registry (see the descriptions above)
 #define CURRENT_CONFIG_VERSION 4 // current configuration version (stored in the registry when the plugin unloads)
 const char* CONFIG_VERSION = "Version";
@@ -851,7 +854,10 @@ CPluginInterface::LoadConfiguration(HWND parent, HKEY regKey, CSalamanderRegistr
                     {
                         char legacy[256] = "";
                         if (registry->GetValue(pk, "Password", REG_SZ, legacy, sizeof(legacy)))
+                        {
                             SftpSavedSetLegacyPassword(p, legacy);
+                            SftpLegacyPasswordsConverted = true;
+                        }
                         SecureZeroMemory(legacy, sizeof(legacy));
                     }
                     registry->GetValue(pk, "KeyFile", REG_SZ, p.KeyFile, sizeof(p.KeyFile));
@@ -989,6 +995,18 @@ void SaveSftpConfigurationImmediately(HWND parent)
         SalamanderGeneral->CallLoadOrSaveConfiguration(FALSE, SftpLoadOrSaveConfigurationCallback, (void*)parent);
 }
 
+// CallLoadOrSaveConfiguration is not documented as re-entrant from inside LoadConfiguration (the
+// plugin's registry key is being read), so LoadConfiguration only sets a flag and the save is done
+// here, from main-thread entry points that run after the load (Connect, connect dialog).
+void SftpFlushPendingConfigSave(HWND parent)
+{
+    if (SftpLegacyPasswordsConverted)
+    {
+        SftpLegacyPasswordsConverted = false;
+        SaveSftpConfigurationImmediately(parent);
+    }
+}
+
 void WINAPI
 CPluginInterface::Configuration(HWND parent)
 {
@@ -1029,6 +1047,8 @@ CPluginInterface::Connect(HWND parent, CSalamanderConnectAbstract* salamander)
     salamander->SetChangeDriveMenuItem("\tSFTP", 0);
     salamander->SetPluginIcon(0);
     salamander->SetPluginMenuAndToolbarIcon(0);
+
+    SftpFlushPendingConfigSave(parent);
 }
 
 void WINAPI

@@ -482,6 +482,7 @@ INT_PTR CALLBACK ConnectDlgProc(HWND HWindow, UINT uMsg, WPARAM wParam, LPARAM l
 
         g_MpAskDeclined = false;
         g_PwdLockedIndex = -1;
+        SftpFlushPendingConfigSave(HWindow);
 
         // fill category tree (like WinSCP); advanced pages hidden
         BuildConnectTree(GetDlgItem(HWindow, IDC_CATTREE), false);

@@ -104,6 +104,8 @@ void SftpCalcSize(HWND parent, CPluginFSInterface* fs, const char* remoteDir, in
 
 // Save configuration immediately to registry
 void SaveSftpConfigurationImmediately(HWND parent);
+// saves the configuration now if LoadConfiguration converted legacy plaintext passwords (main thread)
+void SftpFlushPendingConfigSave(HWND parent);
 
 // Wrap command line execution with custom sftp-server prefix (e.g. sudo -u hop)
 void WrapCommandWithSftpServerPrefix(const char* sftpServer, const char* rawCmd, char* outBuf, size_t outSize);
