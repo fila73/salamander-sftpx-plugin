@@ -2371,59 +2371,40 @@ static void SftpHostPrefix(const CSftpProfile& prof, char* out, int outSize)
         _snprintf_s(out, outSize, _TRUNCATE, "//%s%s", prof.Host, portpart);
 }
 
-// if "//user@host[:port]/..." contains a different host than current profile, update profile
-// and force new connection (allows entering sftp://user@host/ directly in address bar)
+// if "//user@host[:port]/..." contains a different host/user/port than current profile, switch profile
+// and force new connection (allows entering sftp://user@host/ directly in address bar).
+// Credentials of the previous server are never carried over: the new profile is either a full copy of
+// a saved profile for exactly this host+user+port, or a bare Host/User/Port (EnsureConnected prompts).
+// An invalid port in the typed path makes the switch be ignored (stay on the current server).
 static void SftpParseHostInto(CSftpProfile& prof, CSftpConnection& conn, const char* userPart)
 {
-    if (userPart == NULL || (userPart[0] != '/' && userPart[0] != '\\') ||
-        (userPart[1] != '/' && userPart[1] != '\\'))
+    char user[128], host[256];
+    int port;
+    if (!SftpParseHostSpec(userPart, user, sizeof(user), host, sizeof(host), &port))
         return;
-    const char* p = userPart + 2;
-    const char* slash = p;
-    while (*slash != 0 && *slash != '/' && *slash != '\\')
-        slash++;
-    int len = (int)(slash - p);
-    char buf[320];
-    if (len <= 0 || len >= (int)sizeof(buf))
-        return;
-    memcpy(buf, p, len);
-    buf[len] = 0;
-    char user[128] = "", host[256] = "";
-    char* hostpart = buf;
-    char* at = strrchr(buf, '@'); // the user name may contain '@'
-    if (at != NULL)
+    if (_stricmp(host, prof.Host) != 0 || (user[0] != 0 && _stricmp(user, prof.User) != 0) ||
+        port != (prof.Port > 0 ? prof.Port : 22))
     {
-        *at = 0;
-        lstrcpyn(user, buf, sizeof(user));
-        hostpart = at + 1;
-    }
-    int port = 22;
-    char* colon = strchr(hostpart, ':');
-    if (colon != NULL)
-    {
-        *colon = 0;
-        port = atoi(colon + 1);
-    }
-    lstrcpyn(host, hostpart, sizeof(host));
-    if (host[0] == 0)
-        return;
-    if (_stricmp(host, prof.Host) != 0 || (user[0] != 0 && _stricmp(user, prof.User) != 0))
-    {
-        lstrcpyn(prof.Host, host, sizeof(prof.Host));
-        if (user[0] != 0)
-            lstrcpyn(prof.User, user, sizeof(prof.User));
-        prof.Port = (port > 0) ? port : 22;
-        prof.Valid = true;
-        prof.Name[0] = 0;
+        CSftpProfile fresh;
+        memset(&fresh, 0, sizeof(fresh));
         for (int i = 0; i < SftpProfileCount; i++)
         {
-            if (_stricmp(prof.Host, SftpProfiles[i].Host) == 0 &&
-                (prof.User[0] == 0 || _stricmp(prof.User, SftpProfiles[i].User) == 0))
+            if (_stricmp(host, SftpProfiles[i].Host) == 0 &&
+                (user[0] == 0 || _stricmp(user, SftpProfiles[i].User) == 0) &&
+                port == (SftpProfiles[i].Port > 0 ? SftpProfiles[i].Port : 22))
             {
-                lstrcpyn(prof.Name, SftpProfiles[i].Name, sizeof(prof.Name));
+                SftpProfileFromSaved(fresh, SftpProfiles[i]); // its own credentials, sent only to its own host
                 break;
             }
         }
+        if (fresh.Host[0] == 0)
+        {
+            lstrcpyn(fresh.Host, host, sizeof(fresh.Host));
+            lstrcpyn(fresh.User, user, sizeof(fresh.User));
+            fresh.Valid = true;
+        }
+        fresh.Port = port;
+        prof = fresh;
         conn.Disconnect(); // different server -> new connection
     }
 }

@@ -148,6 +148,36 @@ int main()
         }
     }
 
+    // SftpParseHostSpec
+    {
+        struct { const char* in; bool ok; const char* user; const char* host; int port; } c[] = {
+            {"//u@h/p", true, "u", "h", 22},
+            {"//h", true, "", "h", 22},
+            {"\\\\u@h:2222/x", true, "u", "h", 2222},
+            {"//a@b@h:22/x", true, "a@b", "h", 22},
+            {"//h:/x", true, "", "h", 22},
+            {"//h:0/x", false, "", "", 22},
+            {"//h:65536/x", false, "", "", 22},
+            {"//h:65535/x", true, "", "h", 65535},
+            {"//h:-1/x", false, "", "", 22},
+            {"//h:22x/x", false, "", "", 22},
+            {"//h:99999999999999/x", false, "", "", 22},
+            {"//u@/x", false, "", "", 22},
+            {"/path", false, "", "", 22},
+            {"", false, "", "", 22},
+        };
+        for (auto& t : c)
+        {
+            char u[128], h[256];
+            int port;
+            bool ok = SftpParseHostSpec(t.in, u, sizeof(u), h, sizeof(h), &port);
+            bool good = ok == t.ok && (!ok || (strcmp(u, t.user) == 0 && strcmp(h, t.host) == 0 && port == t.port));
+            printf("%s SftpParseHostSpec \"%s\" -> ok=%d user=\"%s\" host=\"%s\" port=%d\n", good ? "PASS" : "FAIL", t.in, ok, u, h, port);
+            if (!good)
+                g_fail++;
+        }
+    }
+
     printf(g_fail ? "\n%d FAILED\n" : "\nall passed\n", g_fail);
     return g_fail ? 1 : 0;
 }
