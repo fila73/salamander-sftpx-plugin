@@ -1158,7 +1158,7 @@ bool CSftpConnection::ScpUpload(const char* localPath, const char* remotePath)
         ok = false;
     }
     fclose(f);
-    if (ok && done != total)
+    if (ok && done < total)
     {
         ErrorMsg = "Local file size changed during upload.";
         ok = false;
@@ -1427,7 +1427,7 @@ bool CSftpConnection::Download(const char* remotePath, const char* localPath, un
         done += (unsigned __int64)n;
         if (!ReportProgress(localPath, done, total)) { ErrorMsg = "Cancelled by user."; ok = false; break; }
     }
-    if (ok && total > 0 && done != total)
+    if (ok && total > 0 && done < total)
     {
         ErrorMsg = "Download incomplete (remote file size changed or connection closed early).";
         ok = false;
@@ -1519,7 +1519,7 @@ bool CSftpConnection::Upload(const char* localPath, const char* remotePath, unsi
         ok = false;
     }
     fclose(f);
-    if (ok && done != total)
+    if (ok && done < total)
     {
         ErrorMsg = "Local file size changed during upload.";
         ok = false;
