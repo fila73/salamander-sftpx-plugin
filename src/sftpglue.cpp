@@ -443,8 +443,9 @@ void SftpCheckHeap(const char* where)
 
 // ---------------------------------------------------------------------------
 // Saved profile passwords (Salamander password manager). Main thread only.
-// The profile keeps only the encrypted blob; plaintext exists just in short-lived
-// local buffers that are zeroed after use.
+// CSftpSavedProfile (registry/dialog list) keeps only the encrypted blob. The runtime
+// CSftpProfile still holds the decrypted password while a connection uses it; the helpers
+// here zero their own temporary buffers after use.
 
 // stores a blob returned by EncryptPassword() into the profile; frees the Salamander buffer
 static bool SftpStoreBlob(CSftpSavedProfile& dst, BYTE* blob, int blobSize)
@@ -545,8 +546,8 @@ bool SftpSavedReencryptAll(HWND parent, int event)
                 int blobSize = 0;
                 if (plain[0] == 0)
                     p.EncPasswordSize = 0;
-                else if (pm->EncryptPassword(plain, &blob, &blobSize, FALSE))
-                    SftpStoreBlob(p, blob, blobSize);
+                else if (!pm->EncryptPassword(plain, &blob, &blobSize, FALSE) || !SftpStoreBlob(p, blob, blobSize))
+                    allOk = false; // blob left as it was (AES), warn the user
                 SecureZeroMemory(plain, lstrlenA(plain));
                 SalamanderGeneral->Free(plain);
             }
