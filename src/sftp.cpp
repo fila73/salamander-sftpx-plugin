@@ -962,6 +962,17 @@ CPluginInterface::SaveConfiguration(HWND parent, HKEY regKey, CSalamanderRegistr
                 registry->CloseKey(pk);
             }
         }
+        // delete stale subkeys left by an earlier, larger profile list (they may hold old passwords)
+        for (int i = SftpProfileCount; i < 10000; i++)
+        {
+            char idx[16];
+            sprintf(idx, "%d", i);
+            HKEY pk;
+            if (!registry->OpenKey(serversKey, idx, pk))
+                break;
+            registry->CloseKey(pk);
+            registry->DeleteKey(serversKey, idx);
+        }
         registry->CloseKey(serversKey);
     }
 }
