@@ -1165,12 +1165,15 @@ CPluginInterfaceForFS::ExecuteOnFS(int panel, CPluginFSInterfaceAbstract* plugin
 
         SalamanderGeneral->SetUserWorkedOnPanelPath(panel);
         char remote[MAX_PATH];
-        if (!SftpJoinName(fs->Path, file.Name, remote, MAX_PATH))
-            return; // unsafe name from server listing
         char tmpDir[MAX_PATH], tmpFile[MAX_PATH];
         GetTempPath(MAX_PATH, tmpDir);
-        lstrcpyn(tmpFile, tmpDir, MAX_PATH);
-        SalamanderGeneral->SalPathAppend(tmpFile, file.Name, MAX_PATH);
+        if (!SftpJoinName(fs->Path, file.Name, remote, MAX_PATH) || !LocalJoinName(tmpDir, file.Name, tmpFile, MAX_PATH))
+        {
+            char eb[700]; // unsafe name from server listing: never act on it
+            _snprintf_s(eb, _TRUNCATE, "Unsafe file name from server: \"%s\"\nThe item was not processed.", file.Name);
+            SalamanderGeneral->SalMessageBox(parent, eb, LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
+            return;
+        }
         if (fs->EnsureConnected(parent) && fs->Conn.Download(remote, tmpFile))
             ShellExecute(SalamanderGeneral->GetMainWindowHWND(), "open", tmpFile, NULL, tmpDir, SW_SHOWNORMAL);
         else

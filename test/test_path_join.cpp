@@ -101,6 +101,47 @@ int main()
     SftpRemotePart("\\home\\u", out, MAX_PATH);
     CheckStr("remote part \\home\\u (no host)", out, "/home/u");
 
+    // LocalJoinName: untrusted remote name -> local Windows path component
+    {
+        char lo[MAX_PATH];
+        struct { const char* name; bool ok; } cases[] = {
+            {"file.txt", true}, {"a.b.c", true}, {"..a", true}, {"a..b", true}, {"con1", true}, {"COM10", true},
+            {"LPT", true}, {"comx", true}, {"nul_x", true}, {"\xC4\x8D\xC3\xA1st.txt", true}, {"na\xEFve", true},
+            {"", false}, {".", false}, {"..", false}, {"..\\..\\x", false}, {"../x", false}, {"a\\b", false},
+            {"a/b", false}, {"C:evil", false}, {"x:stream", false}, {"a*b", false}, {"a?b", false},
+            {"a\"b", false}, {"a<b", false}, {"a>b", false}, {"a|b", false}, {"a\tb", false}, {"a\x01", false},
+            {"foo.", false}, {"foo ", false}, {"foo...", false},
+            {"CON", false}, {"con", false}, {"CON.txt", false}, {"con ", false}, {"con .txt", false}, {"Prn", false},
+            {"AUX.tar.gz", false}, {"nul", false}, {"NUL.", false}, {"COM1", false}, {"com9.txt", false},
+            {"COM0", false}, {"LPT1.tar.gz", false}, {"lpt9", false}, {"COM\xB9", false}, {"LPT\xB2.x", false},
+            {"COM\xB3", false},
+        };
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+        {
+            bool ok = LocalJoinName("C:\\tmp", cases[i].name, lo, MAX_PATH);
+            if (ok != cases[i].ok || (!ok && lo[0] != 0))
+            {
+                printf("FAIL LocalJoinName(\"%s\"): got %d, want %d\n", cases[i].name, ok, cases[i].ok);
+                g_fail++;
+            }
+        }
+        CheckStr("local join adds backslash", LocalJoinName("C:\\tmp", "a.txt", lo, MAX_PATH) ? lo : "?", "C:\\tmp\\a.txt");
+        CheckStr("local join keeps single backslash", LocalJoinName("C:\\tmp\\", "a.txt", lo, MAX_PATH) ? lo : "?", "C:\\tmp\\a.txt");
+        CheckStr("local join root", LocalJoinName("C:\\", "a.txt", lo, MAX_PATH) ? lo : "?", "C:\\a.txt");
+        // overflow: "C:\tmp\a.txt" is 12 chars + NUL
+        char tiny[13];
+        memset(tiny, 'x', sizeof(tiny));
+        bool okFit = LocalJoinName("C:\\tmp", "a.txt", tiny, 13);
+        char tiny2[12];
+        memset(tiny2, 'x', sizeof(tiny2));
+        bool okOver = LocalJoinName("C:\\tmp", "a.txt", tiny2, 12);
+        if (!okFit || okOver || tiny2[0] != 0)
+        {
+            printf("FAIL LocalJoinName overflow: fit=%d over=%d out=\"%s\"\n", okFit, okOver, tiny2);
+            g_fail++;
+        }
+    }
+
     printf(g_fail ? "\n%d FAILED\n" : "\nall passed\n", g_fail);
     return g_fail ? 1 : 0;
 }

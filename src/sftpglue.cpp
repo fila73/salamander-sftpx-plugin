@@ -173,6 +173,57 @@ bool SftpJoinName(const char* base, const char* name, char* out, int outSize)
     return true;
 }
 
+bool LocalJoinName(const char* base, const char* name, char* out, int outSize)
+{
+    // 'name' is ONE literal local path component taken from an untrusted server: rejected (never
+    // sanitized) when it could escape the directory, address a device / stream or be altered by Win32
+    if (out != NULL && outSize > 0)
+        out[0] = 0;
+    if (out == NULL || outSize <= 0 || base == NULL || name == NULL || name[0] == 0 ||
+        strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+        return false;
+    for (const char* p = name; *p != 0; p++)
+    {
+        unsigned char c = (unsigned char)*p; // char is unsigned under /J, but do not rely on it
+        if (c < 0x20 || strchr("\\/:*?\"<>|", c) != NULL)
+            return false;
+    }
+    size_t nl = strlen(name);
+    if (name[nl - 1] == ' ' || name[nl - 1] == '.')
+        return false;
+    // reserved device name: part before the first '.' (trailing spaces ignored), e.g. "con.txt", "NUL "
+    char devBase[8];
+    size_t bl = 0;
+    while (name[bl] != 0 && name[bl] != '.')
+        bl++;
+    while (bl > 0 && name[bl - 1] == ' ')
+        bl--;
+    if (bl == 3 || bl == 4)
+    {
+        memcpy(devBase, name, bl);
+        devBase[bl] = 0;
+        _strupr_s(devBase, sizeof(devBase));
+        if (bl == 3 && (strcmp(devBase, "CON") == 0 || strcmp(devBase, "PRN") == 0 ||
+                        strcmp(devBase, "AUX") == 0 || strcmp(devBase, "NUL") == 0))
+            return false;
+        if (bl == 4 && (strncmp(devBase, "COM", 3) == 0 || strncmp(devBase, "LPT", 3) == 0))
+        {
+            unsigned char d = (unsigned char)devBase[3]; // digit or superscript 1/2/3 (CP1252 0xB9 0xB2 0xB3)
+            if ((d >= '0' && d <= '9') || d == 0xB9 || d == 0xB2 || d == 0xB3)
+                return false;
+        }
+    }
+    size_t basel = strlen(base);
+    bool sep = basel > 0 && base[basel - 1] != '\\';
+    if (basel + (sep ? 1 : 0) + nl + 1 > (size_t)outSize)
+        return false;
+    memcpy(out, base, basel);
+    if (sep)
+        out[basel++] = '\\';
+    memcpy(out + basel, name, nl + 1);
+    return true;
+}
+
 void SftpParent(const char* path, char* out, int outSize)
 {
     lstrcpyn(out, (path && *path) ? path : "/", outSize);
