@@ -143,8 +143,8 @@ private:
     void ThreadLoop();
 
     bool ExecuteTask(CSftpTransferTask& task);
-    bool DoDownloadRecursive(const std::string& remote, const std::string& local, bool isDir);
-    bool DoUploadRecursive(const std::string& local, const std::string& remote, bool isDir);
+    bool DoDownloadRecursive(const std::string& remote, const std::string& local, bool isDir, bool deleteSource = false);
+    bool DoUploadRecursive(const std::string& local, const std::string& remote, bool isDir, bool deleteSource = false);
 
     static bool StaticProgressCallback(void* ctx, const char* name, unsigned __int64 done, unsigned __int64 total);
     bool ReportProgress(const char* name, unsigned __int64 done, unsigned __int64 total);

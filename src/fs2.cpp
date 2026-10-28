@@ -3332,6 +3332,10 @@ static bool SftpDeleteRecursive(CSftpConnection& conn, const char* remote, bool 
     return conn.RemoveDir(remote);
 }
 
+// number of files skipped (overwrite dialog "Skip" or synchronization) by the recursive
+// transfer functions below; Move must not delete the source when this is non-zero
+static int g_SkippedCount = 0;
+
 // recursive download of file/directory from SFTP to disk
 static bool SftpDownloadRecursive(CSftpConnection& conn, const char* remote, const char* local, bool isDir)
 {
@@ -3342,7 +3346,10 @@ static bool SftpDownloadRecursive(CSftpConnection& conn, const char* remote, con
         if (g_SyncMode) // synchronization: without asking, only missing/changed
         {
             if (SyncSkipDownload(conn, remote, local))
+            {
+                g_SkippedCount++;
                 return true;
+            }
             if (SftpIsCancelled())
                 return false;
             return conn.Download(remote, local);
@@ -3365,7 +3372,10 @@ static bool SftpDownloadRecursive(CSftpConnection& conn, const char* remote, con
             {
                 int a = SftpAskOverwrite(local);
                 if (a == 0)
-                    return true; // skip (= success)
+                {
+                    g_SkippedCount++; // skipped - source must not be deleted by Move
+                    return true;      // skip (= success)
+                }
                 if (a < 0)
                 {
                     g_OvrCancel = true;
@@ -3407,7 +3417,10 @@ static bool SftpUploadRecursive(CSftpConnection& conn, const char* local, const 
         if (g_SyncMode) // synchronization: without asking, only missing/changed
         {
             if (SyncSkipUpload(conn, local, remote))
+            {
+                g_SkippedCount++;
                 return true;
+            }
             if (SftpIsCancelled())
                 return false;
             return conn.Upload(local, remote);
@@ -3430,7 +3443,10 @@ static bool SftpUploadRecursive(CSftpConnection& conn, const char* local, const 
             {
                 int a = SftpAskOverwrite(remote);
                 if (a == 0)
-                    return true; // skip
+                {
+                    g_SkippedCount++; // skipped - source must not be deleted by Move
+                    return true;
+                }
                 if (a < 0)
                 {
                     g_OvrCancel = true;
@@ -4320,6 +4336,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
             SftpJoin(remoteTargetDir, ff->Name, dst, MAX_PATH);
             lstrcpyn(tmpItem, tmpDir, 2 * MAX_PATH);
             SalamanderGeneral->SalPathAppend(tmpItem, ff->Name, 2 * MAX_PATH);
+            g_SkippedCount = 0;
             BOOL step = SftpDownloadRecursive(Conn, src, tmpItem, isDirF != 0) &&
                         SftpUploadRecursive(*pTargetConn, tmpItem, dst, isDirF != 0);
             LocalDeleteRecursive(tmpItem, isDirF != 0); // cleanup temp
@@ -4338,8 +4355,8 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                     break;
                 }
             }
-            else if (!copy)
-                SftpDeleteRecursive(Conn, src, isDirF != 0); // Move -> delete source
+            else if (!copy && g_SkippedCount == 0)
+                SftpDeleteRecursive(Conn, src, isDirF != 0); // Move -> delete source (only if nothing was skipped)
             if (focusedF)
                 break;
         }

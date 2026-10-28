@@ -471,30 +471,18 @@ bool CSftpTransferWorker::ExecuteTask(CSftpTransferTask& task)
     bool ok = false;
     if (task.TaskType == CSftpTransferTask::TaskDownload)
     {
-        ok = DoDownloadRecursive(task.RemotePath, task.LocalPath, task.IsDirectory);
-        if (ok && task.DeleteSourceOnSuccess)
-        {
-            if (task.IsDirectory)
-                WorkerConn.RemoveDir(task.RemotePath.c_str());
-            else
-                WorkerConn.RemoveFile(task.RemotePath.c_str());
-        }
+        // Move: source items are deleted one by one inside the recursive function,
+        // only after they were actually transferred (never skipped/failed ones)
+        ok = DoDownloadRecursive(task.RemotePath, task.LocalPath, task.IsDirectory, task.DeleteSourceOnSuccess);
     }
     else if (task.TaskType == CSftpTransferTask::TaskUpload)
     {
-        ok = DoUploadRecursive(task.LocalPath, task.RemotePath, task.IsDirectory);
-        if (ok && task.DeleteSourceOnSuccess)
-        {
-            if (task.IsDirectory)
-                RemoveDirectoryA(task.LocalPath.c_str());
-            else
-                DeleteFileA(task.LocalPath.c_str());
-        }
+        ok = DoUploadRecursive(task.LocalPath, task.RemotePath, task.IsDirectory, task.DeleteSourceOnSuccess);
     }
     return ok;
 }
 
-bool CSftpTransferWorker::DoDownloadRecursive(const std::string& remote, const std::string& local, bool isDir)
+bool CSftpTransferWorker::DoDownloadRecursive(const std::string& remote, const std::string& local, bool isDir, bool deleteSource)
 {
     {
         EnterCriticalSection(&State.Lock);
@@ -562,7 +550,12 @@ bool CSftpTransferWorker::DoDownloadRecursive(const std::string& remote, const s
         }
         LeaveCriticalSection(&State.Lock);
 
-        return WorkerConn.Download(actRemote.c_str(), actLocal.c_str(), resumeOffset);
+        if (!WorkerConn.Download(actRemote.c_str(), actLocal.c_str(), resumeOffset))
+            return false;
+        // Transferred successfully - delete the source file (move)
+        if (deleteSource)
+            WorkerConn.RemoveFile(actRemote.c_str());
+        return true;
     }
 
     // Recursive directory download
@@ -586,13 +579,13 @@ bool CSftpTransferWorker::DoDownloadRecursive(const std::string& remote, const s
         lstrcpynA(l, local.c_str(), MAX_PATH);
         PathAppendA(l, entries[i].Name.c_str());
 
-        if (!DoDownloadRecursive(r, l, entries[i].IsDir))
+        if (!DoDownloadRecursive(r, l, entries[i].IsDir, deleteSource))
             return false;
     }
     return true;
 }
 
-bool CSftpTransferWorker::DoUploadRecursive(const std::string& local, const std::string& remote, bool isDir)
+bool CSftpTransferWorker::DoUploadRecursive(const std::string& local, const std::string& remote, bool isDir, bool deleteSource)
 {
     {
         EnterCriticalSection(&State.Lock);
@@ -664,7 +657,12 @@ bool CSftpTransferWorker::DoUploadRecursive(const std::string& local, const std:
         }
         LeaveCriticalSection(&State.Lock);
 
-        return WorkerConn.Upload(actLocal.c_str(), actRemote.c_str(), resumeOffset);
+        if (!WorkerConn.Upload(actLocal.c_str(), actRemote.c_str(), resumeOffset))
+            return false;
+        // Transferred successfully - delete the source file (move)
+        if (deleteSource)
+            DeleteFileA(actLocal.c_str());
+        return true;
     }
 
     // Recursive directory upload
@@ -700,7 +698,7 @@ bool CSftpTransferWorker::DoUploadRecursive(const std::string& local, const std:
         SftpJoin(remote.c_str(), fd.cFileName, r, MAX_PATH);
 
         bool subIsDir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-        if (!DoUploadRecursive(l, r, subIsDir))
+        if (!DoUploadRecursive(l, r, subIsDir, deleteSource))
         {
             ok = false;
             break;
