@@ -791,7 +791,13 @@ int CSftpTransferWorker::AskOverwriteWorker(const char* srcPath, const char* src
             outResumeOffset = 0;
             return 1;
         case SFTP_CONFLICT_RESUME:
-            outResumeOffset = existingSize;
+            // Resuming is only meaningful when the target is smaller than the source;
+            // otherwise overwrite (offset == size would transfer 0 bytes and a Move
+            // would then delete the source)
+            if (existingSize > 0 && existingSize < newSize)
+                outResumeOffset = existingSize;
+            else
+                outResumeOffset = 0;
             return 1;
         case SFTP_CONFLICT_RESUME_OR_OVERWRITE:
             if (existingSize > 0 && existingSize < newSize)
