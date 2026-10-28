@@ -128,6 +128,12 @@ int main()
         CheckStr("local join adds backslash", LocalJoinName("C:\\tmp", "a.txt", lo, MAX_PATH) ? lo : "?", "C:\\tmp\\a.txt");
         CheckStr("local join keeps single backslash", LocalJoinName("C:\\tmp\\", "a.txt", lo, MAX_PATH) ? lo : "?", "C:\\tmp\\a.txt");
         CheckStr("local join root", LocalJoinName("C:\\", "a.txt", lo, MAX_PATH) ? lo : "?", "C:\\a.txt");
+        // empty base would yield a relative path: rejected
+        if (LocalJoinName("", "a.txt", lo, MAX_PATH) || lo[0] != 0)
+        {
+            printf("FAIL LocalJoinName: empty base accepted\n");
+            g_fail++;
+        }
         // overflow: "C:\tmp\a.txt" is 12 chars + NUL
         char tiny[13];
         memset(tiny, 'x', sizeof(tiny));

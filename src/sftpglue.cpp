@@ -179,7 +179,7 @@ bool LocalJoinName(const char* base, const char* name, char* out, int outSize)
     // sanitized) when it could escape the directory, address a device / stream or be altered by Win32
     if (out != NULL && outSize > 0)
         out[0] = 0;
-    if (out == NULL || outSize <= 0 || base == NULL || name == NULL || name[0] == 0 ||
+    if (out == NULL || outSize <= 0 || base == NULL || base[0] == 0 || name == NULL || name[0] == 0 ||
         strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
         return false;
     for (const char* p = name; *p != 0; p++)
