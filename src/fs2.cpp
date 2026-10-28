@@ -4720,32 +4720,15 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
     int specPort = 22;
     if ((userPart[0] == '/' || userPart[0] == '\\') && (userPart[1] == '/' || userPart[1] == '\\'))
     {
-        const char* hostStart = userPart + 2;
-        const char* slash = hostStart;
-        while (*slash != 0 && *slash != '/' && *slash != '\\')
-            slash++;
-        int hLen = (int)(slash - hostStart);
-        if (hLen > 0 && hLen < 320)
+        if (!SftpParseHostSpec(userPart, specUser, sizeof(specUser), specHost, sizeof(specHost), &specPort))
         {
-            char hostBuf[320];
-            memcpy(hostBuf, hostStart, hLen);
-            hostBuf[hLen] = 0;
-            char* hpart = hostBuf;
-            char* at = strrchr(hostBuf, '@'); // the user name may contain '@'
-            if (at != NULL)
-            {
-                *at = 0;
-                lstrcpyn(specUser, hostBuf, sizeof(specUser));
-                hpart = at + 1;
-            }
-            char* colon = strchr(hpart, ':');
-            if (colon != NULL)
-            {
-                *colon = 0;
-                if (atoi(colon + 1) > 0)
-                    specPort = atoi(colon + 1);
-            }
-            lstrcpyn(specHost, hpart, sizeof(specHost));
+            // invalid host spec: abort, so Salamander does not open a fresh FS for it
+            char eb[MAX_PATH + 64];
+            _snprintf_s(eb, _TRUNCATE, "Invalid host or port in path: %s", targetPath);
+            SalamanderGeneral->SalMessageBox(parent, eb, LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
+            if (invalidPathOrCancel != NULL)
+                *invalidPathOrCancel = TRUE;
+            return FALSE;
         }
     }
 
