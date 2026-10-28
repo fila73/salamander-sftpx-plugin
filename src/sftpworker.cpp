@@ -669,6 +669,15 @@ bool CSftpTransferWorker::DoUploadRecursive(const std::string& local, const std:
         return true;
     }
 
+    // Never follow junctions/symlinks: their target lies outside the selection
+    // (Move would delete foreign data, a link to an ancestor would loop forever).
+    // The link stays on disk, so a Move keeps the parent directory too.
+    {
+        DWORD la = GetFileAttributesA(local.c_str());
+        if (la != INVALID_FILE_ATTRIBUTES && (la & FILE_ATTRIBUTE_REPARSE_POINT))
+            return true;
+    }
+
     // Recursive directory upload
     WorkerConn.MakeDir(remote.c_str());
 

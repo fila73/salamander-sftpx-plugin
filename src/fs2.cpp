@@ -3460,6 +3460,15 @@ static bool SftpUploadRecursive(CSftpConnection& conn, const char* local, const 
     }
     if (SftpIsCancelled())
         return false;
+    // never follow junctions/symlinks (data outside the selection, possible loops)
+    {
+        DWORD la = GetFileAttributes(local);
+        if (la != INVALID_FILE_ATTRIBUTES && (la & FILE_ATTRIBUTE_REPARSE_POINT))
+        {
+            g_SkippedCount++; // not transferred - source must not be deleted by Move
+            return true;
+        }
+    }
     conn.MakeDir(remote); // ignore error (may already exist)
     char mask[2 * MAX_PATH];
     lstrcpyn(mask, local, 2 * MAX_PATH);
@@ -3499,6 +3508,13 @@ static void LocalDeleteRecursive(const char* path, bool isDir)
     if (!isDir)
     {
         DeleteFile(path);
+        return;
+    }
+    // junction/symlink to a directory: remove only the link, never its target content
+    DWORD pa = GetFileAttributes(path);
+    if (pa != INVALID_FILE_ATTRIBUTES && (pa & FILE_ATTRIBUTE_REPARSE_POINT))
+    {
+        RemoveDirectory(path);
         return;
     }
     char mask[2 * MAX_PATH];
