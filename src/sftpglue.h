@@ -82,6 +82,7 @@ bool LocalJoinName(const char* base, const char* name, char* out, int outSize);
 void SftpParent(const char* path, char* out, int outSize); // up-dir
 void SftpFixTypedPath(char* path); // path starting with backslash = Windows-style typed path: backslash -> '/'; else literal
 void SftpRemotePart(const char* userPart, char* out, int outSize); // strip //host, apply the rule above
+bool SftpParseHostSpec(const char* userPart, char* user, int userSize, char* host, int hostSize, int* port);
 bool SftpIsSamePath(const char* a, const char* b);
 bool SftpIsRoot(const char* path);
 

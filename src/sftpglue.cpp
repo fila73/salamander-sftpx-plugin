@@ -263,6 +263,72 @@ void SftpRemotePart(const char* userPart, char* out, int outSize)
     SftpFixTypedPath(out);
 }
 
+// Parses the "//[user@]host[:port]" prefix of an address-bar path. Port defaults to 22 when absent
+// or empty. An IPv6 literal is written "[addr]" / "[addr]:port" and returned without the brackets.
+// Returns false (caller must not switch server) if there is no host, the port is not a number in
+// 1..65535, or the user part contains ':' (user:password is not supported).
+bool SftpParseHostSpec(const char* userPart, char* user, int userSize, char* host, int hostSize, int* port)
+{
+    user[0] = 0;
+    host[0] = 0;
+    *port = 22;
+    if (userPart == NULL || (userPart[0] != '/' && userPart[0] != '\\') ||
+        (userPart[1] != '/' && userPart[1] != '\\'))
+        return false;
+    const char* p = userPart + 2;
+    const char* slash = p;
+    while (*slash != 0 && *slash != '/' && *slash != '\\')
+        slash++;
+    int len = (int)(slash - p);
+    char buf[320];
+    if (len <= 0 || len >= (int)sizeof(buf))
+        return false;
+    memcpy(buf, p, len);
+    buf[len] = 0;
+    char* hostpart = buf;
+    char* at = strrchr(buf, '@'); // the user name may contain '@'
+    if (at != NULL)
+    {
+        *at = 0;
+        if (strchr(buf, ':') != NULL)
+            return false;
+        lstrcpyn(user, buf, userSize);
+        hostpart = at + 1;
+    }
+    char* colon;
+    if (hostpart[0] == '[')
+    {
+        char* close = strchr(hostpart, ']');
+        if (close == NULL || close == hostpart + 1 || (close[1] != 0 && close[1] != ':'))
+            return false;
+        *close = 0;
+        if (strchr(hostpart + 1, ':') == NULL) // an IPv6 literal contains ':' (only look inside the brackets)
+            return false;
+        hostpart++; // drop '['
+        colon = (close[1] == ':') ? close + 1 : NULL; // the ':' before the port, as in the plain case
+    }
+    else
+        colon = strchr(hostpart, ':');
+    if (colon != NULL)
+    {
+        *colon = 0;
+        if (colon[1] != 0)
+        {
+            long v = 0;
+            for (const char* d = colon + 1; *d != 0; d++)
+            {
+                if (*d < '0' || *d > '9' || (v = v * 10 + (*d - '0')) > 65535)
+                    return false;
+            }
+            if (v <= 0)
+                return false;
+            *port = (int)v;
+        }
+    }
+    lstrcpyn(host, hostpart, hostSize);
+    return host[0] != 0;
+}
+
 bool SftpIsSamePath(const char* a, const char* b)
 {
     char na[MAX_PATH], nb[MAX_PATH];

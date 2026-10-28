@@ -2324,15 +2324,26 @@ bool CPluginFSInterface::EnsureConnected(HWND parent)
     return r;
 }
 
+// host as written in a path: an IPv6 literal (contains ':') gets its brackets back
+static void SftpHostForPath(const char* host, char* out, int outSize)
+{
+    if (strchr(host, ':') != NULL)
+        _snprintf_s(out, outSize, _TRUNCATE, "[%s]", host);
+    else
+        lstrcpyn(out, host, outSize);
+}
+
 void CPluginFSInterface::HostPrefix(char* out, int outSize) const
 {
     char portpart[16] = "";
     if (Profile.Port != 0 && Profile.Port != 22)
         _snprintf_s(portpart, _TRUNCATE, ":%d", Profile.Port);
+    char host[270];
+    SftpHostForPath(Profile.Host, host, sizeof(host));
     if (Profile.User[0] != 0)
-        _snprintf_s(out, outSize, _TRUNCATE, "//%s@%s%s", Profile.User, Profile.Host, portpart);
+        _snprintf_s(out, outSize, _TRUNCATE, "//%s@%s%s", Profile.User, host, portpart);
     else
-        _snprintf_s(out, outSize, _TRUNCATE, "//%s%s", Profile.Host, portpart);
+        _snprintf_s(out, outSize, _TRUNCATE, "//%s%s", host, portpart);
 }
 
 void WINAPI
@@ -2365,67 +2376,58 @@ static void SftpHostPrefix(const CSftpProfile& prof, char* out, int outSize)
     char portpart[16] = "";
     if (prof.Port != 0 && prof.Port != 22)
         _snprintf_s(portpart, _TRUNCATE, ":%d", prof.Port);
+    char host[270];
+    SftpHostForPath(prof.Host, host, sizeof(host));
     if (prof.User[0] != 0)
-        _snprintf_s(out, outSize, _TRUNCATE, "//%s@%s%s", prof.User, prof.Host, portpart);
+        _snprintf_s(out, outSize, _TRUNCATE, "//%s@%s%s", prof.User, host, portpart);
     else
-        _snprintf_s(out, outSize, _TRUNCATE, "//%s%s", prof.Host, portpart);
+        _snprintf_s(out, outSize, _TRUNCATE, "//%s%s", host, portpart);
 }
 
-// if "//user@host[:port]/..." contains a different host than current profile, update profile
-// and force new connection (allows entering sftp://user@host/ directly in address bar)
-static void SftpParseHostInto(CSftpProfile& prof, CSftpConnection& conn, const char* userPart)
+// if "//user@host[:port]/..." contains a different host/user/port than current profile, switch profile
+// and force new connection (allows entering sftp://user@host/ directly in address bar).
+// Credentials of the previous server are never carried over: the new profile is either a full copy of
+// a saved profile for exactly this host+user+port, or a bare Host/User/Port with an empty password
+// (authentication then tries an empty password; only keyboard-interactive, if the server offers it,
+// prompts).
+// Returns FALSE only if the path starts with "//" but the host spec is invalid (bad port, IPv6 syntax,
+// "user:password@"): the caller must not navigate, or it would act on the previous server.
+static BOOL SftpParseHostInto(CSftpProfile& prof, CSftpConnection& conn, const char* userPart)
 {
-    if (userPart == NULL || (userPart[0] != '/' && userPart[0] != '\\') ||
-        (userPart[1] != '/' && userPart[1] != '\\'))
-        return;
-    const char* p = userPart + 2;
-    const char* slash = p;
-    while (*slash != 0 && *slash != '/' && *slash != '\\')
-        slash++;
-    int len = (int)(slash - p);
-    char buf[320];
-    if (len <= 0 || len >= (int)sizeof(buf))
-        return;
-    memcpy(buf, p, len);
-    buf[len] = 0;
-    char user[128] = "", host[256] = "";
-    char* hostpart = buf;
-    char* at = strrchr(buf, '@'); // the user name may contain '@'
-    if (at != NULL)
+    char user[128], host[256];
+    int port;
+    if (!SftpParseHostSpec(userPart, user, sizeof(user), host, sizeof(host), &port))
     {
-        *at = 0;
-        lstrcpyn(user, buf, sizeof(user));
-        hostpart = at + 1;
+        bool hasSpec = (userPart[0] == '/' || userPart[0] == '\\') && (userPart[1] == '/' || userPart[1] == '\\');
+        return !hasSpec; // no host spec at all -> stay on the current server
     }
-    int port = 22;
-    char* colon = strchr(hostpart, ':');
-    if (colon != NULL)
+    if (_stricmp(host, prof.Host) != 0 || (user[0] != 0 && _stricmp(user, prof.User) != 0) ||
+        port != (prof.Port > 0 ? prof.Port : 22))
     {
-        *colon = 0;
-        port = atoi(colon + 1);
-    }
-    lstrcpyn(host, hostpart, sizeof(host));
-    if (host[0] == 0)
-        return;
-    if (_stricmp(host, prof.Host) != 0 || (user[0] != 0 && _stricmp(user, prof.User) != 0))
-    {
-        lstrcpyn(prof.Host, host, sizeof(prof.Host));
-        if (user[0] != 0)
-            lstrcpyn(prof.User, user, sizeof(prof.User));
-        prof.Port = (port > 0) ? port : 22;
-        prof.Valid = true;
-        prof.Name[0] = 0;
+        CSftpProfile fresh;
+        memset(&fresh, 0, sizeof(fresh));
         for (int i = 0; i < SftpProfileCount; i++)
         {
-            if (_stricmp(prof.Host, SftpProfiles[i].Host) == 0 &&
-                (prof.User[0] == 0 || _stricmp(prof.User, SftpProfiles[i].User) == 0))
+            if (_stricmp(host, SftpProfiles[i].Host) == 0 &&
+                (user[0] == 0 || _stricmp(user, SftpProfiles[i].User) == 0) &&
+                port == (SftpProfiles[i].Port > 0 ? SftpProfiles[i].Port : 22))
             {
-                lstrcpyn(prof.Name, SftpProfiles[i].Name, sizeof(prof.Name));
+                SftpProfileFromSaved(fresh, SftpProfiles[i]); // its own credentials, sent only to its own host
                 break;
             }
         }
+        if (fresh.Host[0] == 0)
+        {
+            lstrcpyn(fresh.Host, host, sizeof(fresh.Host));
+            // no user typed: keep only the previous user name (never its password, key or other settings)
+            lstrcpyn(fresh.User, user[0] != 0 ? user : prof.User, sizeof(fresh.User));
+            fresh.Valid = true;
+        }
+        fresh.Port = port;
+        prof = fresh;
         conn.Disconnect(); // different server -> new connection
     }
+    return TRUE;
 }
 
 BOOL WINAPI
@@ -2529,8 +2531,13 @@ CPluginFSInterface::ChangePath(int currentFSNameIndex, char* fsName, int fsNameI
         Profile = ConnectData.Profile;
         Profile.Valid = true;
     }
-    else
-        SftpParseHostInto(Profile, Conn, userPart);
+    else if (!SftpParseHostInto(Profile, Conn, userPart))
+    {
+        char eb[MAX_PATH + 64];
+        _snprintf_s(eb, _TRUNCATE, "Invalid host or port in path: %s", userPart);
+        SalamanderGeneral->SalMessageBox(parent, eb, LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
+        return FALSE;
+    }
 
     if (!EnsureConnected(parent))
         return FALSE;
@@ -4373,37 +4380,22 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
 
         char targetHost[256] = "";
         char targetUser[128] = "";
-        int targetPort = 0;
+        int targetPort = 22;
         char remoteTargetDir[MAX_PATH] = "/";
 
         if ((p[0] == '/' || p[0] == '\\') && (p[1] == '/' || p[1] == '\\'))
         {
             // Host specified: //user@host:port/path
-            const char* hostStart = p + 2;
-            const char* slash = hostStart;
+            const char* slash = p + 2;
             while (*slash != 0 && *slash != '/' && *slash != '\\')
                 slash++;
-            int hLen = (int)(slash - hostStart);
-            if (hLen > 0 && hLen < (int)sizeof(targetHost))
+            if (!SftpParseHostSpec(p, targetUser, sizeof(targetUser), targetHost, sizeof(targetHost), &targetPort))
             {
-                char hostBuf[320];
-                memcpy(hostBuf, hostStart, hLen);
-                hostBuf[hLen] = 0;
-                char* at = strrchr(hostBuf, '@'); // the user name may contain '@'
-                char* hpart = hostBuf;
-                if (at != NULL)
-                {
-                    *at = 0;
-                    lstrcpynA(targetUser, hostBuf, sizeof(targetUser));
-                    hpart = at + 1;
-                }
-                char* colon = strchr(hpart, ':');
-                if (colon != NULL)
-                {
-                    *colon = 0;
-                    targetPort = atoi(colon + 1);
-                }
-                lstrcpynA(targetHost, hpart, sizeof(targetHost));
+                char eb[MAX_PATH + 64];
+                _snprintf_s(eb, _TRUNCATE, "Invalid host or port in path: %s", target);
+                SalamanderGeneral->SalMessageBox(parent, eb, LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
+                cancelOrHandlePath = TRUE;
+                return TRUE;
             }
             if (*slash != 0)
                 lstrcpynA(remoteTargetDir, slash, sizeof(remoteTargetDir));
@@ -4437,13 +4429,14 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
         {
             if (_stricmp(targetHost, Profile.Host) != 0)
                 isSameServer = false;
-            else if (targetPort > 0 && targetPort != (Profile.Port > 0 ? Profile.Port : 22))
+            else if (targetPort != (Profile.Port > 0 ? Profile.Port : 22))
                 isSameServer = false;
             else if (targetUser[0] != 0 && Profile.User[0] != 0 && _stricmp(targetUser, Profile.User) != 0)
                 isSameServer = false;
         }
 
         CSftpProfile targetProfile;
+        memset(&targetProfile, 0, sizeof(targetProfile)); // no constructor: Host[0]/Password/KeyFile must start empty
         CSftpConnection* pTargetConn = NULL;
         CSftpConnection localTargetConn;
         char targetConnName[128] = "";
@@ -4463,7 +4456,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                 CPluginFSInterface* pFS = static_cast<CPluginFSInterface*>(fsList[i]);
                 if (_stricmp(pFS->Profile.Host, targetHost) == 0 &&
                     (targetUser[0] == 0 || _stricmp(pFS->Profile.User, targetUser) == 0) &&
-                    (targetPort == 0 || (pFS->Profile.Port > 0 ? pFS->Profile.Port : 22) == targetPort))
+                    (pFS->Profile.Port > 0 ? pFS->Profile.Port : 22) == targetPort)
                 {
                     targetProfile = pFS->Profile;
                     if (pFS->Conn.IsConnected())
@@ -4479,7 +4472,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                 {
                     if (_stricmp(SftpProfiles[i].Host, targetHost) == 0 &&
                         (targetUser[0] == 0 || _stricmp(SftpProfiles[i].User, targetUser) == 0) &&
-                        (targetPort == 0 || (SftpProfiles[i].Port > 0 ? SftpProfiles[i].Port : 22) == targetPort))
+                        (SftpProfiles[i].Port > 0 ? SftpProfiles[i].Port : 22) == targetPort)
                     {
                         SftpProfileFromSaved(targetProfile, SftpProfiles[i]);
                         break;
@@ -4492,7 +4485,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                 lstrcpynA(targetProfile.Host, targetHost, sizeof(targetProfile.Host));
                 if (targetUser[0] != 0)
                     lstrcpynA(targetProfile.User, targetUser, sizeof(targetProfile.User));
-                targetProfile.Port = targetPort > 0 ? targetPort : 22;
+                targetProfile.Port = targetPort;
                 targetProfile.Valid = true;
             }
 
@@ -4727,32 +4720,15 @@ CPluginFSInterface::CopyOrMoveFromDiskToFS(BOOL copy, int mode, const char* fsNa
     int specPort = 22;
     if ((userPart[0] == '/' || userPart[0] == '\\') && (userPart[1] == '/' || userPart[1] == '\\'))
     {
-        const char* hostStart = userPart + 2;
-        const char* slash = hostStart;
-        while (*slash != 0 && *slash != '/' && *slash != '\\')
-            slash++;
-        int hLen = (int)(slash - hostStart);
-        if (hLen > 0 && hLen < 320)
+        if (!SftpParseHostSpec(userPart, specUser, sizeof(specUser), specHost, sizeof(specHost), &specPort))
         {
-            char hostBuf[320];
-            memcpy(hostBuf, hostStart, hLen);
-            hostBuf[hLen] = 0;
-            char* hpart = hostBuf;
-            char* at = strrchr(hostBuf, '@'); // the user name may contain '@'
-            if (at != NULL)
-            {
-                *at = 0;
-                lstrcpyn(specUser, hostBuf, sizeof(specUser));
-                hpart = at + 1;
-            }
-            char* colon = strchr(hpart, ':');
-            if (colon != NULL)
-            {
-                *colon = 0;
-                if (atoi(colon + 1) > 0)
-                    specPort = atoi(colon + 1);
-            }
-            lstrcpyn(specHost, hpart, sizeof(specHost));
+            // invalid host spec: abort, so Salamander does not open a fresh FS for it
+            char eb[MAX_PATH + 64];
+            _snprintf_s(eb, _TRUNCATE, "Invalid host or port in path: %s", targetPath);
+            SalamanderGeneral->SalMessageBox(parent, eb, LoadStr(IDS_PLUGINNAME), MB_OK | MB_ICONEXCLAMATION);
+            if (invalidPathOrCancel != NULL)
+                *invalidPathOrCancel = TRUE;
+            return FALSE;
         }
     }
 
