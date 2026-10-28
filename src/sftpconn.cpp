@@ -1069,7 +1069,45 @@ bool CSftpConnection::ScpDownload(const char* remotePath, const char* localPath)
         ErrorMsg = "Disk write failed.";
         ok = false;
     }
+    if (ok)
+    {
+        // SCP protocol: after the data the source sends a status byte (0 = OK, 1/2 + message = error);
+        // the sink answers with 0.
+        char status = 0;
+        ssize_t sn = libssh2_channel_read(ch, &status, 1);
+        if (sn == 1 && status != 0)
+        {
+            char msg[256] = {0};
+            ssize_t mn = libssh2_channel_read(ch, msg, sizeof(msg) - 1);
+            if (mn < 0) mn = 0;
+            msg[mn] = 0;
+            while (mn > 0 && (msg[mn - 1] == '\n' || msg[mn - 1] == '\r')) msg[--mn] = 0;
+            ErrorMsg = std::string("SCP remote error: ") + (msg[0] ? msg : "transfer failed");
+            ok = false;
+        }
+        else if (sn < 0)
+        {
+            SetError("SCP download (status)");
+            ok = false;
+        }
+        else if (sn == 1)
+        {
+            char ack = 0;
+            libssh2_channel_write(ch, &ack, 1);
+            libssh2_channel_send_eof(ch);
+        }
+    }
     libssh2_channel_close(ch);
+    if (ok)
+    {
+        libssh2_channel_wait_closed(ch);
+        int rc = libssh2_channel_get_exit_status(ch);
+        if (rc != 0)
+        {
+            ErrorMsg = "SCP remote command failed (exit status " + std::to_string(rc) + ").";
+            ok = false;
+        }
+    }
     libssh2_channel_free(ch);
     if (!ok && done == 0)
     {
@@ -1133,6 +1171,15 @@ bool CSftpConnection::ScpUpload(const char* localPath, const char* remotePath)
         {
             SetError("SCP upload (finish)");
             ok = false;
+        }
+        else
+        {
+            int rc = libssh2_channel_get_exit_status(ch);
+            if (rc != 0)
+            {
+                ErrorMsg = "SCP remote command failed (exit status " + std::to_string(rc) + ").";
+                ok = false;
+            }
         }
     }
     libssh2_channel_free(ch);
