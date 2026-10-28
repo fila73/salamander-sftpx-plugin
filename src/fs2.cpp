@@ -3286,6 +3286,8 @@ CPluginFSInterface::CreateDir(const char* fsName, int mode, HWND parent, char* n
     return TRUE;
 }
 
+static void SftpReportUnsafeName(HWND parent, const char* name);
+
 void WINAPI
 CPluginFSInterface::ViewFile(const char* fsName, HWND parent,
                              CSalamanderForViewFileOnFSAbstract* salamander,
@@ -3305,6 +3307,14 @@ CPluginFSInterface::ViewFile(const char* fsName, HWND parent,
     _snprintf_s(uniqueFileName + len, sizeof(uniqueFileName) - len, _TRUNCATE,
                 ":%I64u:%08lx%08lx", file.Size.Value,
                 file.LastWrite.dwHighDateTime, file.LastWrite.dwLowDateTime);
+
+    // the cache just appends 'file.Name' to its directory: refuse names that are not one safe local component
+    char nameCheck[2 * MAX_PATH];
+    if (!LocalJoinName("C:\\", file.Name, nameCheck, sizeof(nameCheck)))
+    {
+        SftpReportUnsafeName(parent, file.Name);
+        return;
+    }
 
     // obtain the cache copy name
     BOOL fileExists;
