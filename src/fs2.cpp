@@ -2417,7 +2417,8 @@ static BOOL SftpParseHostInto(CSftpProfile& prof, CSftpConnection& conn, const c
         if (fresh.Host[0] == 0)
         {
             lstrcpyn(fresh.Host, host, sizeof(fresh.Host));
-            lstrcpyn(fresh.User, user, sizeof(fresh.User));
+            // no user typed: keep only the previous user name (never its password, key or other settings)
+            lstrcpyn(fresh.User, user[0] != 0 ? user : prof.User, sizeof(fresh.User));
             fresh.Valid = true;
         }
         fresh.Port = port;
