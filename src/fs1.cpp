@@ -227,9 +227,10 @@ static void GetSelFolder(HWND HWindow, char* out, int outSize)
 static CSftpProfile g_DlgProfile;
 
 // master password prompt is shown at most once per dialog; when the stored password of a profile
-// cannot be decrypted, its name is remembered so that saving with an empty password field keeps the blob
+// cannot be decrypted, its slot index is remembered (not the name, which Rename can change) so that
+// saving with an empty password field can keep the blob; -1 = no lock
 static bool g_MpAskDeclined = false;
-static char g_PwdLockedName[128] = "";
+static int g_PwdLockedIndex = -1;
 
 // load profile into dialog fields
 static void LoadProfileToFields(HWND HWindow, CSftpSavedProfile& p)
@@ -247,10 +248,10 @@ static void LoadProfileToFields(HWND HWindow, CSftpSavedProfile& p)
         if (!ok)
         {
             g_MpAskDeclined = true;
-            lstrcpyn(g_PwdLockedName, p.Name, sizeof(g_PwdLockedName));
+            g_PwdLockedIndex = (int)(&p - SftpProfiles);
         }
         else
-            g_PwdLockedName[0] = 0;
+            g_PwdLockedIndex = -1;
         SetDlgItemText(HWindow, IDC_PASSWORD, pwd);
         SecureZeroMemory(pwd, sizeof(pwd));
     }
@@ -480,7 +481,7 @@ INT_PTR CALLBACK ConnectDlgProc(HWND HWindow, UINT uMsg, WPARAM wParam, LPARAM l
         SendMessage(enc, CB_SETCURSEL, (SftpEncoding >= 0 && SftpEncoding <= 2) ? SftpEncoding : 0, 0);
 
         g_MpAskDeclined = false;
-        g_PwdLockedName[0] = 0;
+        g_PwdLockedIndex = -1;
 
         // fill category tree (like WinSCP); advanced pages hidden
         BuildConnectTree(GetDlgItem(HWindow, IDC_CATTREE), false);
@@ -637,6 +638,7 @@ INT_PTR CALLBACK ConnectDlgProc(HWND HWindow, UINT uMsg, WPARAM wParam, LPARAM l
         {
             // new connection: clear fields and switch to Connection page
             g_SelectedProfileIndex = -1;
+            g_PwdLockedIndex = -1;
             g_DlgProfile.Name[0] = 0;
             SetDlgItemText(HWindow, IDC_HOST, "");
             SetDlgItemText(HWindow, IDC_PORT, "22");
@@ -799,8 +801,7 @@ INT_PTR CALLBACK ConnectDlgProc(HWND HWindow, UINT uMsg, WPARAM wParam, LPARAM l
                 char pwd[256];
                 GetDlgItemText(HWindow, IDC_PASSWORD, pwd, sizeof(pwd));
                 bool ok = true;
-                if (pwd[0] == 0 && targetIndex >= 0 && g_PwdLockedName[0] != 0 &&
-                    strcmp(g_PwdLockedName, SftpProfiles[targetIndex].Name) == 0)
+                if (pwd[0] == 0 && targetIndex >= 0 && targetIndex == g_PwdLockedIndex)
                 {
                     // stored password could not be decrypted and the field is empty -> keep the old blob
                     memcpy(p.EncPassword, SftpProfiles[targetIndex].EncPassword, sizeof(p.EncPassword));
@@ -851,6 +852,7 @@ INT_PTR CALLBACK ConnectDlgProc(HWND HWindow, UINT uMsg, WPARAM wParam, LPARAM l
                     SftpProfiles[i] = SftpProfiles[i + 1];
                 SftpProfileCount--;
                 g_SelectedProfileIndex = -1;
+                g_PwdLockedIndex = -1; // slots shifted; the fields are no longer tied to a locked slot
                 SaveSftpConfigurationImmediately(HWindow);
                 FillSessionList(HWindow);
             }
