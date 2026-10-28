@@ -803,12 +803,37 @@ INT_PTR CALLBACK ConnectDlgProc(HWND HWindow, UINT uMsg, WPARAM wParam, LPARAM l
                 bool ok = true;
                 if (pwd[0] == 0 && targetIndex >= 0 && targetIndex == g_PwdLockedIndex)
                 {
-                    // stored password could not be decrypted and the field is empty -> keep the old blob
-                    memcpy(p.EncPassword, SftpProfiles[targetIndex].EncPassword, sizeof(p.EncPassword));
-                    p.EncPasswordSize = SftpProfiles[targetIndex].EncPasswordSize;
+                    // stored password could not be decrypted and the field is empty -> ask what to do
+                    if (SalamanderGeneral->SalMessageBox(HWindow,
+                                                         "The stored password of this connection cannot be decrypted "
+                                                         "(master password unknown). The password field is empty.\n\n"
+                                                         "Yes = keep the stored password\nNo = delete the stored password",
+                                                         LoadStr(IDS_PLUGINNAME), MB_YESNO | MB_ICONQUESTION) == IDYES)
+                    {
+                        memcpy(p.EncPassword, SftpProfiles[targetIndex].EncPassword, sizeof(p.EncPassword));
+                        p.EncPasswordSize = SftpProfiles[targetIndex].EncPasswordSize;
+                    }
+                    else
+                    {
+                        p.EncPasswordSize = 0;
+                        g_PwdLockedIndex = -1;
+                    }
                 }
                 else
-                    ok = SftpSavedSetPassword(HWindow, p, pwd);
+                {
+                    // unchanged text (equals the stored password) keeps the blob: no master password, no re-encryption
+                    if (targetIndex >= 0 && pwd[0] != 0 && SftpSavedPasswordEquals(SftpProfiles[targetIndex], pwd))
+                    {
+                        memcpy(p.EncPassword, SftpProfiles[targetIndex].EncPassword, sizeof(p.EncPassword));
+                        p.EncPasswordSize = SftpProfiles[targetIndex].EncPasswordSize;
+                    }
+                    else
+                    {
+                        ok = SftpSavedSetPassword(HWindow, p, pwd);
+                        if (ok && targetIndex == g_PwdLockedIndex)
+                            g_PwdLockedIndex = -1; // blob replaced
+                    }
+                }
                 SecureZeroMemory(pwd, sizeof(pwd));
                 if (!ok)
                 {

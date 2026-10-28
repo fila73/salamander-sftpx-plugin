@@ -55,6 +55,8 @@ bool SftpSavedGetPassword(HWND parent, CSftpSavedProfile& src, char* out, int ou
 // Stores 'plain' as encrypted blob (AES if master password is in use, else scrambled).
 // Returns false (blob unchanged) if the master password is needed but was not entered.
 bool SftpSavedSetPassword(HWND parent, CSftpSavedProfile& dst, const char* plain);
+// True if the stored password decrypts (never asks for the master password) and equals 'plain'.
+bool SftpSavedPasswordEquals(CSftpSavedProfile& src, const char* plain);
 // Scrambles a legacy plaintext registry password into the blob (needs no master password).
 void SftpSavedSetLegacyPassword(CSftpSavedProfile& dst, const char* legacyPlain);
 // PME_MASTERPASSWORD* handling: converts all blobs; returns false if some could not be decrypted.

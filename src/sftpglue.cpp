@@ -481,6 +481,16 @@ bool SftpSavedSetPassword(HWND parent, CSftpSavedProfile& dst, const char* plain
     return SftpStoreBlob(dst, blob, blobSize);
 }
 
+bool SftpSavedPasswordEquals(CSftpSavedProfile& src, const char* plain)
+{
+    if (src.EncPasswordSize <= 0 || plain == NULL)
+        return false;
+    char cur[256];
+    bool same = SftpSavedGetPassword(NULL, src, cur, sizeof(cur), false) && strcmp(cur, plain) == 0;
+    SecureZeroMemory(cur, sizeof(cur));
+    return same;
+}
+
 void SftpSavedSetLegacyPassword(CSftpSavedProfile& dst, const char* legacyPlain)
 {
     // legacy plaintext registry value: scramble only (no master password needed during load)
