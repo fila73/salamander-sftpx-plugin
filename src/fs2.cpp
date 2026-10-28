@@ -4510,8 +4510,15 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
             }
         }
 
+        // items are staged in a fresh unique directory (never in %TEMP% itself): only it is deleted afterwards
         char tmpDir[MAX_PATH];
-        GetTempPath(MAX_PATH, tmpDir);
+        if (!SalamanderGeneral->SalGetTempFileName(NULL, "SFT", tmpDir, FALSE, NULL))
+        {
+            SalamanderGeneral->SalMessageBox(parent, "Cannot create a temporary directory.", LoadStr(IDS_PLUGINNAME),
+                                             MB_OK | MB_ICONEXCLAMATION);
+            cancelOrHandlePath = TRUE;
+            return TRUE;
+        }
 
         BOOL focusedF = (selectedFiles == 0 && selectedDirs == 0);
         int totalFilesF = focusedF ? 1 : (selectedFiles + selectedDirs);
@@ -4573,6 +4580,7 @@ CPluginFSInterface::CopyOrMoveFromFS(BOOL copy, int mode, const char* fsName, HW
                 break;
         }
         SftpProgressEnd();
+        LocalDeleteRecursive(tmpDir, true); // staging directory (also after error / cancel)
         if (pTargetConn == &localTargetConn)
         {
             localTargetConn.Disconnect();
