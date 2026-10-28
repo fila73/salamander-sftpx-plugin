@@ -1165,6 +1165,17 @@ bool CSftpConnection::ScpUpload(const char* localPath, const char* remotePath)
     }
     if (ok)
     {
+        // SCP protocol: the source ends the file with a 0 status byte; without it
+        // the remote scp sink sees EOF instead and exits with status 1.
+        char status = 0;
+        if (libssh2_channel_write(ch, &status, 1) != 1)
+        {
+            SetError("SCP upload (status)");
+            ok = false;
+        }
+    }
+    if (ok)
+    {
         if (libssh2_channel_send_eof(ch) < 0 ||
             libssh2_channel_wait_eof(ch) < 0 ||
             libssh2_channel_wait_closed(ch) < 0)
