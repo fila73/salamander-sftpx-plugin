@@ -102,7 +102,8 @@ void CSftpConnection::SetError(const char* ctx)
 {
     char buf[512];
     unsigned long sftpErr = 0;
-    if (Sftp)
+    // the SFTP status is meaningful only when libssh2 reports an SFTP protocol error
+    if (Sftp && Session && libssh2_session_last_errno(Session) == LIBSSH2_ERROR_SFTP_PROTOCOL)
         sftpErr = libssh2_sftp_last_error(Sftp);
 
     const char* sftpDesc = nullptr;

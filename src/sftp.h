@@ -546,6 +546,7 @@ protected:
     CPluginFSInterface* FS;
     BOOL IsBackground;
     HWND CenterToWnd;
+    BOOL SyncWait; // caller waits synchronously with the main window disabled: keep it disabled, no Background
     char ConnName[128];
     char FromConnName[128];
     char ToConnName[128];
@@ -582,6 +583,7 @@ public:
     BOOL GetWantCancel();
 
     void SetFS(CPluginFSInterface* fs) { FS = fs; }
+    void SetSyncWait();
     void AttachWorker(CSftpTransferWorker* worker, bool ownsWorker = false);
     virtual void DetachWorker() override;
     void UpdateFromWorker();
@@ -736,6 +738,7 @@ public:
     char Path[MAX_PATH];             // current path
     BOOL PathError;                  // TRUE if ListCurrentPath failed (path error); ChangePath will be called
     BOOL FatalError;                 // TRUE if ListCurrentPath failed (fatal error); ChangePath will be called
+    BOOL ChangePathCalled;           // TRUE once ChangePath was called (FALSE = fresh FS from OpenFS)
     CTopIndexMem TopIndexMem;        // top-index cache used by ExecuteOnFS()
     BOOL CalledFromDisconnectDialog; // TRUE = the user wants to disconnect this FS from the Disconnect dialog (F12)
 
