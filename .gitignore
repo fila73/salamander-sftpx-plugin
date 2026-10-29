@@ -24,3 +24,14 @@ Release/
 *.TXT
 build/
 test/sftpglue_paths.inc
+
+# MSVC outputs
+*.lib
+*.pdb
+*.ilk
+*.exp
+*.iobj
+*.ipdb
+*.obj
+.vs/
+x64/

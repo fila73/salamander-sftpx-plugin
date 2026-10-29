@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Shared settings for sftp.vcxproj and the lang_*.vcxproj projects.
-     Standalone layout (mirrors Makefile.mingw): the Open Salamander SDK is expected
-     next to this repo in ..\salamander-plugins\salamand. Override with
-     /p:SalamanderSdkDir=<path to salamand dir> if it lives elsewhere. -->
+     Workspace layout: the plugin SDK is taken from the samandarin fork,
+     salamander\samandarin\src (so $(SalamanderSdkDir)plugins\shared is the SDK). Override with
+     /p:SalamanderSdkDir=<path to a dir containing plugins\shared> if it lives elsewhere. -->
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Label="UserMacros">
     <SftpRootDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\'))</SftpRootDir>
     <SftpSrcDir>$(SftpRootDir)src\</SftpSrcDir>
-    <SalamanderSdkDir Condition="'$(SalamanderSdkDir)'==''">$([System.IO.Path]::GetFullPath('$(SftpRootDir)..\salamander-plugins\salamand'))</SalamanderSdkDir>
+    <SalamanderSdkDir Condition="'$(SalamanderSdkDir)'==''">$([System.IO.Path]::GetFullPath('$(SftpRootDir)..\..\samandarin\src'))</SalamanderSdkDir>
     <SalamanderSdkDir Condition="!HasTrailingSlash('$(SalamanderSdkDir)')">$(SalamanderSdkDir)\</SalamanderSdkDir>
     <SalamanderSharedDir>$(SalamanderSdkDir)plugins\shared\</SalamanderSharedDir>
     <SftpOutDir>$(SftpRootDir)build\$(Configuration)_$(Platform)\</SftpOutDir>
@@ -18,6 +18,6 @@
   </PropertyGroup>
   <Target Name="SftpCheckSdk" BeforeTargets="PrepareForBuild">
     <Error Condition="!Exists('$(SalamanderSharedDir)spl_base.h')"
-           Text="Open Salamander SDK not found in '$(SalamanderSdkDir)'. Pass /p:SalamanderSdkDir=&lt;path to salamand dir&gt;." />
+           Text="Open Salamander SDK not found in '$(SalamanderSdkDir)'. Pass /p:SalamanderSdkDir=&lt;path to samandarin\src&gt;." />
   </Target>
 </Project>

@@ -16,7 +16,7 @@ Tento fork přináší řadu oprav stability, architektonických vylepšení, zv
 
 | Oblast / Funkce | Původní verze ([Dupl3xx](https://github.com/Dupl3xx/salamander-sftp-plugin)) | Tento rozšířený fork ([fila73](https://github.com/fila73/salamander-sftp-plugin)) |
 |---|---|---|
-| **Sestavení a závislosti** | Vyžadovalo externí `libssh2.dll` a dynamické MinGW runtime DLL (`libwinpthread-1.dll` atd.) | **Samostatný build bez závislostí**: `libssh2` je přímo staticky integrován; C/C++ runtime i pthreads jsou linkovány staticky (`-static`). Vyžaduje pouze standardní `libcrypto-3-x64.dll`. |
+| **Sestavení a závislosti** | Vyžadovalo externí `libssh2.dll` a dynamické MinGW runtime DLL | **Samostatný build bez závislostí**: `libssh2` je přímo staticky integrován; C/C++ runtime je linkován staticky (`/MT`). Vyžaduje pouze standardní `libcrypto-3-x64.dll`. |
 | **Vlastní SFTP server a přepnutí uživatele** | Pouze výchozí SFTP subsystém SSHD | **Vlastní příkaz `sftp-server` / `sudo` / `su`**: Možnost spustit SFTP subsystém s právy `root` přes `sudo`, přepnout se na servisního uživatele (např. `www-data`), zadat nestandardní cestu k binárce a automatické obalení příkazové řádky. |
 | **Spouštění příkazů na serveru** | Základní provádění | **Asynchronní neblokující spouštění na pozadí** přes dedikované SSH spojení; nastavitelné okno konzole (Consolas font, zalamování textu, tlačítko Storno/Cancel). |
 | **Udržování spojení (Keepalive)** | Základní TCP / idle obsluha | **Aktivní periodický FS timer keepalive** (interval 8 s) zabraňující odpojení na serverech TrueNAS / OpenSSH (`ClientAliveInterval`) a stavových firewallech; neblokující detekce zdraví socketu a transparentní auto-reconnect. |
@@ -121,30 +121,19 @@ Vše se vyjednává automaticky dle možností serveru:
 | `lang/lang.rc`, `lang.rc2`, `lang.rh` | Dialogy, textové řetězce a překlady kompilované do `.slg`. |
 | `res/fs.ico`, `dir.ico`, `file.ico` | Ikony pluginu a dialogů. |
 | `versinfo.rh2` | Informace o verzi a copyrightu. |
-| `Makefile.mingw` | Skript pro samostatnou kompilaci přes GCC / MinGW-w64 (statický runtime). |
 | `vcxproj/sftp.vcxproj` | Projektový soubor pro Microsoft Visual Studio (MSBuild). |
 
 ---
 
 ## Sestavení
 
-### Možnost A: Přes MinGW-w64 (nativní GCC, MSYS2 nebo WSL)
-Plugin lze jednoduše přeložit pomocí přiloženého `Makefile.mingw`:
+**Požadavky:** Visual Studio 2022 nebo novější (případně Build Tools) s x64 C++ toolsetem a Windows 10/11 SDK. Bez vcpkg: `libssh2` se kompiluje ze `src/libssh2` a importní knihovna pro `libcrypto-3-x64.dll` Open Salamandera se při buildu generuje z `libcrypto-3-x64.def`. SDK pluginů se bere z forku samandarin (`..\..\samandarin\src`, tedy tamní `plugins\shared`); jinou cestu lze zadat přes `/p:SalamanderSdkDir=<adresář obsahující plugins\shared>`.
 
 ```powershell
-mingw32-make -f Makefile.mingw CROSS_COMPILE=
+MSBuild srccxproj\sftp.vcxproj /p:Configuration=Release /p:Platform=x64
 ```
 
-Výsledkem jsou zkompilované binárky `sftp.spl`, `english.slg` a `czech.slg` se staticky přilinkovaným C/C++ runtimem a knihovnou `libssh2` (bez závislosti na MinGW DLL, externím `libssh2.dll` či `z.dll`). Plugin využívá standardní `libcrypto-3-x64.dll` přítomnou v instalaci Open Salamandera.
-
-### Možnost B: Přes Visual Studio (MSBuild)
-**Požadavky:** Visual Studio 2022 nebo novější (případně Build Tools) s x64 C++ toolsetem a Windows 10/11 SDK. Bez vcpkg: `libssh2` se kompiluje ze `src/libssh2` a importní knihovna pro `libcrypto-3-x64.dll` se při buildu generuje z `libcrypto-3-x64.def`. SDK Open Salamandera se očekává v `..\salamander-plugins\salamand` (jinou cestu lze zadat přes `/p:SalamanderSdkDir=<cesta>`).
-
-```powershell
-MSBuild src\vcxproj\sftp.vcxproj /p:Configuration=Release /p:Platform=x64
-```
-
-Výstup je v `build\Release_x64\` (`sftp.spl`, `lang\english.slg`, `lang\czech.slg`). Plugin je linkovaný se statickým CRT (`/MT`), takže stejně jako MinGW build potřebuje jen `libcrypto-3-x64.dll` z Open Salamandera.
+Výstup je v `build\Release_x64\` (`sftp.spl`, `lang\english.slg`, `lang\czech.slg`). Plugin je linkovaný se statickým CRT (`/MT`) a `libssh2` je zabudovaná, takže potřebuje jen `libcrypto-3-x64.dll` z Open Salamandera.
 
 ---
 

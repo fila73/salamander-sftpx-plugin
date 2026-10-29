@@ -29,7 +29,7 @@ salamander-sftp-plugin/
 │       ├── lang.rh         # Společné resource ID pro jazyky
 │       └── lang.rc         # Texty a dialogy
 ├── test/                   # Unit testy pro nezávislou engine vrstvu
-├── Makefile.mingw          # Sestavení pomocí MinGW-w64 (GCC/G++)
+├── libcrypto-3-x64.def     # Exporty pro generování import lib Salamanderova libcrypto
 ├── README.md               # Dokumentace (EN)
 ├── README_CZ.md            # Dokumentace (CZ)
 ├── jobs_done.md            # Přehled dokončených úkolů
@@ -53,14 +53,15 @@ Tím Salamander automaticky nastaví kurzor/focus na složku, ze které uživate
 
 ## 3. Sestavení a testování
 
-### Kompilace přes MinGW-w64:
+### Kompilace přes MSVC (MSBuild):
 ```powershell
-mingw32-make -f Makefile.mingw CROSS_COMPILE=
+MSBuild srccxproj\sftp.vcxproj /p:Configuration=Release /p:Platform=x64
 ```
+SDK se bere z `..\..\samandarin\src` (přepíše se přes `/p:SalamanderSdkDir=`).
 
 ### Spuštění testů:
 ```powershell
-g++ test/test_utf8.cpp src/sftpconn.o src/sftpglue.o libssh2_static.a libcrypto-3-x64.a -lws2_32 -lshlwapi -lbcrypt -lcrypt32 -Isrc -Isrc/libssh2/include -o test_utf8.exe
+testuild_test_path_join.bat   (z VS x64 Developer Prompt; ostatní testy v test\ se kompilují obdobně přes `cl`)
 ```
 
 ---
@@ -95,13 +96,13 @@ Při výpočtu velikosti složek (`Calculate Size (server)`):
 
 ## 6. Statické linkování a distribuce na jiné počítače
 
-Pro maximální přenositelnost bez nutnosti instalovat MinGW/GCC runtimes:
-- **Statické runtimes**: `Makefile.mingw` používá `-static -static-libgcc -static-libstdc++`, což eliminuje závislosti na `libwinpthread-1.dll`, `libgcc_s_seh-1.dll` i `libstdc++-6.dll`.
-- **Statický libssh2**: Slinkován přímo do `sftp.spl` ze statického archivu `libssh2_static.a` (není potřeba žádná externí `libssh2.dll` ani `z.dll`).
+Pro maximální přenositelnost bez nutnosti instalovat VC++ runtime:
+- **Statické runtimes**: projekt používá `/MT` (statické CRT), takže není potřeba VC++ redistributable.
+- **Statický libssh2**: Slinkován přímo do `sftp.spl` ze zdrojů `src/libssh2` (OpenSSL backend) (není potřeba žádná externí `libssh2.dll` ani `z.dll`).
 - **Knihovna OpenSSL (`libcrypto-3-x64.dll`)**: `sftp.spl` importuje `libcrypto-3-x64.dll` standardním PE importem. V Open Salamandru se tato knihovna nachází přímo v kořenovém adresáři aplikace (`C:\Apps\samandarin\libcrypto-3-x64.dll`). Starý kód `LoadBundledLibssh2()`, který ji načítal explicitně s `LOAD_WITH_ALTERED_SEARCH_PATH`, byl odstraněn, protože vedl k duplicitnímu načtení druhého OpenSSL runtime a poškození heapu (`0xc0000374`).
 - **Ověření závislostí**:
   ```powershell
-  objdump -p sftp.spl | Select-String "DLL Name"
+  dumpbin /dependents sftp.spl
   ```
   Výstup smí obsahovat pouze standardní Windows systémové knihovny a `libcrypto-3-x64.dll`.
 - **Statická analýza**:

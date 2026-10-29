@@ -882,3 +882,12 @@ CPluginInterfaceForArchiver::PrematureDeleteTmpCopy(HWND parent, int copiesCount
     return SalamanderGeneral->SalMessageBox(parent, buf, LoadStr(IDS_PLUGINNAME),
                                             MB_YESNO | MB_ICONQUESTION) == IDYES;
 }
+
+BOOL WINAPI
+CPluginInterfaceForArchiver::CanOpenArchive(const char* fileName)
+{
+    CALL_STACK_MESSAGE1("CPluginInterfaceForArchiver::CanOpenArchive()");
+    // This plugin's "archives" are SFTP connection files recognised by extension only;
+    // it never claims arbitrary files for the extension-agnostic Ctrl+PageDown probe.
+    return FALSE;
+}

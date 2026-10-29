@@ -16,7 +16,7 @@ This fork introduces significant stability fixes, architecture improvements, enh
 
 | Feature / Area | Original Upstream ([Dupl3xx](https://github.com/Dupl3xx/salamander-sftp-plugin)) | This Enhanced Fork ([fila73](https://github.com/fila73/salamander-sftp-plugin)) |
 |---|---|---|
-| **Build & Dependencies** | Required external `libssh2.dll` and dynamic MinGW runtime DLLs (`libwinpthread-1.dll`, etc.) | **Standalone zero-dependency build**: `libssh2` is statically embedded; C/C++ runtime & pthreads linked statically (`-static`). Only `libcrypto-3-x64.dll` is required. |
+| **Build & Dependencies** | Required external `libssh2.dll` and dynamic MinGW runtime DLLs | **Standalone zero-dependency build**: `libssh2` is statically embedded; the C/C++ runtime is linked statically (`/MT`). Only `libcrypto-3-x64.dll` is required. |
 | **Custom SFTP Server & Elevation** | Only default SSHD SFTP subsystem | **Custom `sftp-server` command support**: Execute SFTP under `sudo` / `su -c` or specific user (e.g. `www-data`), custom binary paths on NAS/BSD, and automatic prefix propagation to command-line bar executions. |
 | **Command Execution** | Basic execution | **Asynchronous non-blocking background execution** with dedicated SSH connection; resizable streaming console dialog (Consolas font, text wrap, Cancel button). |
 | **Connection Keepalive** | Basic TCP / idle handling | **Active periodic FS timer keepalive** (8s interval) preventing disconnects on TrueNAS / OpenSSH (`ClientAliveInterval`) and stateful firewalls; non-blocking socket health check & auto-reconnect. |
@@ -121,30 +121,19 @@ Negotiated automatically based on server capabilities:
 | `lang/lang.rc`, `lang.rc2`, `lang.rh` | Dialog templates, string tables, Czech/English translations compiled into `.slg`. |
 | `res/fs.ico`, `dir.ico`, `file.ico` | Icons for filesystem and dialogs. |
 | `versinfo.rh2` | Version, copyright, and description resource header. |
-| `Makefile.mingw` | GNU Make / GCC build script for MinGW-w64 (standalone build, static runtime). |
 | `vcxproj/sftp.vcxproj` | Visual Studio MSBuild project file. |
 
 ---
 
 ## Building
 
-### Option A: Using MinGW-w64 (via MSYS2, WSL or Native GCC)
-The plugin can be built cleanly using the included `Makefile.mingw`:
+**Requirements:** Visual Studio 2022 or newer (or Build Tools) with the x64 C++ toolset and a Windows 10/11 SDK. No vcpkg: libssh2 is compiled from `src/libssh2` and the import library for Open Salamander's `libcrypto-3-x64.dll` is generated from `libcrypto-3-x64.def` during the build. The plugin SDK is taken from the samandarin fork (`..\..\samandarin\src`, i.e. `plugins\shared` there); override with `/p:SalamanderSdkDir=<dir containing plugins\shared>`.
 
 ```powershell
-mingw32-make -f Makefile.mingw CROSS_COMPILE=
+MSBuild srccxproj\sftp.vcxproj /p:Configuration=Release /p:Platform=x64
 ```
 
-This compiles `sftp.spl`, `english.slg`, and `czech.slg` with statically linked C/C++ runtimes and `libssh2` (no MinGW DLL, external `libssh2.dll` or `z.dll` dependencies). The plugin uses the standard `libcrypto-3-x64.dll` provided by Open Salamander.
-
-### Option B: Using Visual Studio (MSBuild)
-**Requirements:** Visual Studio 2022 or newer (or Build Tools) with the x64 C++ toolset and a Windows 10/11 SDK. No vcpkg: libssh2 is compiled from `src/libssh2` and the `libcrypto-3-x64.dll` import library is generated from `libcrypto-3-x64.def` during the build. The Open Salamander SDK is expected in `..\salamander-plugins\salamand` (override with `/p:SalamanderSdkDir=<path>`).
-
-```powershell
-MSBuild src\vcxproj\sftp.vcxproj /p:Configuration=Release /p:Platform=x64
-```
-
-Output goes to `build\Release_x64\` (`sftp.spl`, `lang\english.slg`, `lang\czech.slg`). The plugin is linked with the static CRT (`/MT`), so like the MinGW build it only needs `libcrypto-3-x64.dll` from Open Salamander.
+Output goes to `build\Release_x64\` (`sftp.spl`, `lang\english.slg`, `lang\czech.slg`). The plugin is linked with the static CRT (`/MT`) and libssh2 is embedded, so it only needs `libcrypto-3-x64.dll` from Open Salamander.
 
 ---
 

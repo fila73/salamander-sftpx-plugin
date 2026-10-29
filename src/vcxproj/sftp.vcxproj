@@ -47,7 +47,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
-      <!-- same flags as Makefile.mingw: static CRT (standalone .spl), UTF-8 source and execution charset -->
+      <!-- static CRT (standalone .spl), UTF-8 source and execution charset -->
       <AdditionalIncludeDirectories>$(SftpSrcDir);$(SftpSrcDir)lang;$(SftpSrcDir)libssh2\include;$(SalamanderSharedDir);$(SalamanderSdkDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;_WIN32;_WIN64;_WINDOWS;_USRDLL;WINVER=0x0601;_WIN32_WINNT=0x0601;_CRT_SECURE_NO_WARNINGS;_WINSOCK_DEPRECATED_NO_WARNINGS;UNICODE_NOT_USED;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -119,7 +119,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\libssh2\agent.c;..\libssh2\bcrypt_pbkdf.c;..\libssh2\chacha.c;..\libssh2\channel.c;..\libssh2\cipher-chachapoly.c;..\libssh2\comp.c;..\libssh2\crypt.c;..\libssh2\global.c;..\libssh2\hostkey.c;..\libssh2\keepalive.c;..\libssh2\kex.c;..\libssh2\knownhost.c;..\libssh2\mac.c;..\libssh2\misc.c;..\libssh2\openssl.c;..\libssh2\packet.c;..\libssh2\pem.c;..\libssh2\poly1305.c;..\libssh2\publickey.c;..\libssh2\scp.c;..\libssh2\session.c;..\libssh2\sftp.c;..\libssh2\transport.c;..\libssh2\userauth.c;..\libssh2\userauth_kbd_packet.c;..\libssh2\version.c">
-      <!-- libssh2 (OpenSSL backend), compiled in statically; same defines as Makefile.mingw -->
+      <!-- libssh2 (OpenSSL backend), compiled in statically -->
       <PreprocessorDefinitions>LIBSSH2_OPENSSL;LIBSSH2_MD5_ENABLE;LIBSSH2_DSA_ENABLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(SftpSrcDir)libssh2;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <CompileAs>CompileAsC</CompileAs>
