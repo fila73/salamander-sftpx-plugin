@@ -61,13 +61,7 @@ CPluginInterfaceForMenuExt::GetMenuItemState(int id, DWORD eventMask)
     }
     else
     {
-        if (id == MENUCMD_SEP || id == MENUCMD_HIDDENITEM) // handle the separator and the item hidden when Shift is held
-        {
-            return MENU_ITEM_STATE_ENABLED |
-                   ((GetKeyState(VK_SHIFT) & 0x8000) ? MENU_ITEM_STATE_HIDDEN : 0);
-        }
-        else
-            TRACE_E("Unexpected call to CPluginInterfaceForMenuExt::GetMenuItemState()");
+        TRACE_E("Unexpected call to CPluginInterfaceForMenuExt::GetMenuItemState()");
     }
     return 0;
 }
@@ -873,22 +867,6 @@ CPluginInterfaceForMenuExt::ExecuteMenuItem(CSalamanderForOperationsAbstract* sa
         return FALSE; // do not deselect panel items
     }
 
-    case MENUCMD_ALLUSERS:
-    case MENUCMD_INTADVUSERS:
-    case MENUCMD_ADVUSERS:
-    {
-        SalamanderGeneral->SalMessageBox(parent, "Hello there!",
-                                         "User's skill level demonstration", MB_OK | MB_ICONINFORMATION);
-        break;
-    }
-
-    case MENUCMD_SHOWCONTROLS:
-    {
-        CCtrlExampleDialog dlg(parent);
-        dlg.Execute();
-        break;
-    }
-
     case MENUCMD_CHECKSFTPTMPDIR:
     {
         ClearTEMPIfNeeded(SalamanderGeneral->GetMsgBoxParent());
@@ -966,27 +944,6 @@ CPluginInterfaceForMenuExt::BuildMenu(HWND parent, CSalamanderBuildMenuAbstract*
                                 MENU_EVENT_FILE_FOCUSED | MENU_EVENT_DIR_FOCUSED |
                                     MENU_EVENT_FILES_SELECTED | MENU_EVENT_DIRS_SELECTED,
                                 MENU_EVENT_THIS_PLUGIN_ARCH, MENU_SKILLLEVEL_ALL);
-    }
-    if (cycle % 4 >= 3)
-    {
-        salamander->AddMenuItem(-1, NULL, 0, 0, FALSE, 0, 0, MENU_SKILLLEVEL_ALL); // separator
-        salamander->AddSubmenuStart(-1, "Skill Level Demo", 0, FALSE, MENU_EVENT_TRUE, MENU_EVENT_TRUE,
-                                    MENU_SKILLLEVEL_BEGINNER | MENU_SKILLLEVEL_INTERMEDIATE | MENU_SKILLLEVEL_ADVANCED);
-        salamander->AddMenuItem(-1, "For Beginning, Intermediate, and Advanced Users", 0, MENUCMD_ALLUSERS, FALSE, MENU_EVENT_TRUE, MENU_EVENT_TRUE,
-                                MENU_SKILLLEVEL_BEGINNER | MENU_SKILLLEVEL_INTERMEDIATE | MENU_SKILLLEVEL_ADVANCED);
-        salamander->AddSubmenuStart(0, "Intermediate and Advanced", 0, FALSE, MENU_EVENT_TRUE, MENU_EVENT_TRUE,
-                                    MENU_SKILLLEVEL_INTERMEDIATE | MENU_SKILLLEVEL_ADVANCED);
-        salamander->AddMenuItem(-1, "For Intermediate and Advanced Users", 0, MENUCMD_INTADVUSERS, FALSE, MENU_EVENT_TRUE, MENU_EVENT_TRUE,
-                                MENU_SKILLLEVEL_INTERMEDIATE | MENU_SKILLLEVEL_ADVANCED);
-        salamander->AddMenuItem(0, "For Advanced Users", 0, MENUCMD_ADVUSERS, FALSE, MENU_EVENT_TRUE, MENU_EVENT_TRUE,
-                                MENU_SKILLLEVEL_ADVANCED);
-        salamander->AddSubmenuEnd();
-        salamander->AddSubmenuEnd();
-        salamander->AddMenuItem(-1, NULL, 0, 0, FALSE, 0, 0, MENU_SKILLLEVEL_ALL); // separator
-        salamander->AddMenuItem(-1, "&Controls provided by Open Salamander...", 0, MENUCMD_SHOWCONTROLS, FALSE, MENU_EVENT_TRUE, MENU_EVENT_TRUE,
-                                MENU_SKILLLEVEL_BEGINNER | MENU_SKILLLEVEL_INTERMEDIATE | MENU_SKILLLEVEL_ADVANCED);
-        salamander->AddMenuItem(-1, NULL, 0, MENUCMD_SEP, TRUE, 0, 0, MENU_SKILLLEVEL_ADVANCED); // separator
-        salamander->AddMenuItem(-1, "Press Shift key when opening menu to hide this item", 0, MENUCMD_HIDDENITEM, TRUE, 0, 0, MENU_SKILLLEVEL_ADVANCED);
     }
     cycle++;
 

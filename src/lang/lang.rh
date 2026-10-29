@@ -82,27 +82,7 @@
 #define IDP_TR_TOTAL_PROGRESS           630
 #define IDB_BACKGROUND                  631
 #define IDP_PROGRESSBAR                 542
-#define IDD_CTRLEXAMPLE                 550
-#define IDC_CE_ST                       551
-#define IDC_CE_STBOLD                   552
-#define IDC_CE_STUNDERLINE              553
-#define IDC_CE_STCACHE                  554
-#define IDC_CE_STPATH                   555
-#define IDC_CE_STEND                    556
-#define IDC_CE_HLOPEN                   557
-#define IDC_CE_HLCOMMAND                558
-#define IDC_CE_PROGRESS                 559
-#define IDC_CE_PBTEXT                   560
-#define IDC_CE_PBCOLOR                  561
 #define IDC_CE_PB                       562
-#define IDC_CE_PBCOLOR2                 563
-#define IDC_CE_STPATH2                  564
-#define IDC_CE_STNONE                   565
-#define IDC_CE_PB2                      566
-#define IDC_CE_TOOLTIP                  567
-#define IDC_CE_PBDROP                   568
-#define IDC_CE_HLHINT                   569
-#define IDC_CE_PROGRESS2                570
 #define IDC_LIST_HEADER                 2510
 #define IDC_LIST                        2511
 

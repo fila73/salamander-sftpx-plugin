@@ -138,30 +138,3 @@ public:
 protected:
     virtual INT_PTR DialogProc(UINT uMsg, WPARAM wParam, LPARAM lParam);
 };
-
-//****************************************************************************
-//
-// CCtrlExampleDialog
-//
-
-class CCtrlExampleDialog : public CCommonDialog
-{
-public:
-    CCtrlExampleDialog(HWND hParent);
-
-    //    virtual void Transfer(CTransferInfo &ti);
-
-protected:
-    virtual INT_PTR DialogProc(UINT uMsg, WPARAM wParam, LPARAM lParam);
-    BOOL CreateChilds();
-
-protected:
-    BOOL TimerStarted;
-    char StringTemplate[300];
-    CGUIStaticTextAbstract* Text;
-    CGUIStaticTextAbstract* CachedText;
-    CGUIProgressBarAbstract* Progress;
-    CGUIProgressBarAbstract* Progress2;
-    DWORD ProgressNumber;
-    DWORD LastTickCount;
-};

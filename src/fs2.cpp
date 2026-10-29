@@ -4997,12 +4997,6 @@ void WINAPI
 CPluginFSInterface::ContextMenu(const char* fsName, HWND parent, int menuX, int menuY, int type,
                                 int panel, int selectedFiles, int selectedDirs)
 {
-#ifndef SFTP_QUIET
-    char bufText[100];
-    sprintf(bufText, "Show context menu (type %d).", (int)type);
-    SalamanderGeneral->SalMessageBox(parent, bufText, "DFS Context Menu", MB_OK | MB_ICONINFORMATION);
-#endif // SFTP_QUIET
-
     HMENU menu = CreatePopupMenu();
     if (menu == NULL)
     {
