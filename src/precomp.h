@@ -67,7 +67,7 @@
 #define ENABLE_PROPERTYDIALOG
 #include "winliblt.h"
 #include "auxtools.h"
-#include "plugindarkmode.h"
+#include "darkmode.h"
 #include "dialogs.h"
 #include "sftp.h"
 #include "sftp.rh"

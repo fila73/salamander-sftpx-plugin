@@ -491,62 +491,6 @@ NastyGoto:
 }
 */
 
-void SftpInitDarkMode(CSalamanderGeneralAbstract* general)
-{
-    if (general == NULL)
-        return;
-    BOOL useDark = FALSE;
-    if (general->GetConfigParameter(SALCFG_USEWINDOWSDARKMODE, &useDark, sizeof(useDark), NULL))
-    {
-        PluginDarkMode_SetHostPolicyAvailable(TRUE, useDark);
-        if (useDark)
-        {
-            // Set dark scheme colors for dialog controls (dark dialog background RGB(32,32,32) and readable light text)
-            PluginDarkMode_SetHostResolvedColors(RGB(220, 220, 220), RGB(32, 32, 32), RGB(220, 220, 220));
-        }
-        else
-        {
-            PluginDarkMode_SetHostResolvedColors(CLR_INVALID, CLR_INVALID, CLR_INVALID);
-        }
-    }
-}
-
-void SftpApplyDarkModeToWindow(HWND hwnd)
-{
-    if (hwnd == NULL)
-        return;
-    SftpInitDarkMode(SalamanderGeneral);
-    PluginDarkMode_ApplyTitleBar(hwnd);
-    PluginDarkMode_ApplyListTreeThemeRecursive(hwnd);
-    if (PluginDarkMode_ShouldUseDark())
-    {
-        for (HWND child = GetWindow(hwnd, GW_CHILD); child != NULL; child = GetWindow(child, GW_HWNDNEXT))
-        {
-            char cls[64];
-            if (GetClassNameA(child, cls, sizeof(cls)) > 0 && _stricmp(cls, "Button") == 0)
-            {
-                LONG_PTR style = GetWindowLongPtr(child, GWL_STYLE);
-                LONG_PTR type = style & BS_TYPEMASK;
-                if (type == BS_PUSHBUTTON || type == BS_DEFPUSHBUTTON)
-                {
-                    SetWindowTheme(child, L"DarkMode_Explorer", NULL);
-                }
-            }
-        }
-    }
-    else
-    {
-        for (HWND child = GetWindow(hwnd, GW_CHILD); child != NULL; child = GetWindow(child, GW_HWNDNEXT))
-        {
-            char cls[64];
-            if (GetClassNameA(child, cls, sizeof(cls)) > 0 && _stricmp(cls, "Button") == 0)
-            {
-                SetWindowTheme(child, NULL, NULL);
-            }
-        }
-    }
-}
-
 CPluginInterfaceAbstract* WINAPI SalamanderPluginEntry(CSalamanderPluginEntryAbstract* salamander)
 {
     // set SalamanderDebug for "dbg.h"
@@ -585,10 +529,7 @@ CPluginInterfaceAbstract* WINAPI SalamanderPluginEntry(CSalamanderPluginEntryAbs
 
     // obtain the general Salamander interface
     SalamanderGeneral = salamander->GetSalamanderGeneral();
-    SftpInitDarkMode(SalamanderGeneral);
-#ifdef USE_DARKMODELIB
     InitializeWinLibDarkMode(SalamanderGeneral);
-#endif // USE_DARKMODELIB
     SalamanderGeneral->GetLowerAndUpperCase(&LowerCase, &UpperCase);
     // obtain the interface providing customized Windows controls used in Salamander
     SalamanderGUI = salamander->GetSalamanderGUI();
@@ -1214,11 +1155,21 @@ CPluginInterface::Event(int event, DWORD param)
         COLORREF bkColor = SalamanderGeneral->GetCurrentColor(SALCOL_ITEM_BK_NORMAL);
         if (ImageList_GetBkColor(DFSImageList) != bkColor)
             ImageList_SetBkColor(DFSImageList, bkColor);
+        RefreshWinLibDarkModeFromHost();
+        ViewerWindowQueue.BroadcastMessage(WM_USER_SETTINGCHANGE, 0, 0); // re-theme open viewers
+        break;
+    }
+
+    case PLUGINEVENT_CONFIGURATIONCHANGED:
+    {
+        RefreshWinLibDarkModeFromHost();
+        ViewerWindowQueue.BroadcastMessage(WM_USER_SETTINGCHANGE, 0, 0);
         break;
     }
 
     case PLUGINEVENT_SETTINGCHANGE:
     {
+        RefreshWinLibDarkModeFromHost();
         ViewerWindowQueue.BroadcastMessage(WM_USER_SETTINGCHANGE, 0, 0);
         break;
     }

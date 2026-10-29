@@ -40,8 +40,6 @@ void ReleaseViewer();
 BOOL InitFS();
 void ReleaseFS();
 
-void SftpInitDarkMode(CSalamanderGeneralAbstract* general);
-void SftpApplyDarkModeToWindow(HWND hwnd);
 
 // FS name assigned by Salamander after the plugin loads
 extern char AssignedFSName[MAX_PATH];
@@ -119,12 +117,6 @@ char* LoadStr(int resID);
 #define MENUCMD_DOPFILES 6
 #define MENUCMD_FILESDIRSINARC 7
 #define MENUCMD_ENTERDISKPATH 8
-#define MENUCMD_ALLUSERS 9
-#define MENUCMD_INTADVUSERS 10
-#define MENUCMD_ADVUSERS 11
-#define MENUCMD_SHOWCONTROLS 12
-#define MENUCMD_SEP 13
-#define MENUCMD_HIDDENITEM 14
 #define MENUCMD_CHECKSFTPTMPDIR 15 // first SFTP instance: optionally clean its temp dir with files unpacked by previous instances
 #define MENUCMD_DISCONNECT_LEFT 16
 #define MENUCMD_DISCONNECT_RIGHT 17

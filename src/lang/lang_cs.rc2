@@ -57,6 +57,7 @@ STRINGTABLE
  IDS_ALWAYSREMEMBER,         "&Zapamatovat tuto volbu a příště se již neptat"
  IDS_WANTDISCONNECT,         "Opravdu se chcete odpojit od SFTP serveru?"
  IDS_MENU_SHOWTRANSFERS,     "&Zobrazit přenosy..."
+ IDS_NOTRANSFERS_ACTIVE,     "Neprobíhají žádné přenosy."
  IDS_TR_TOTAL_ITEMS_MB,      "Celkem: položka %d z %d (%.1f / %.1f MB)"
  IDS_TR_TOTAL_ITEMS_KB,      "Celkem: položka %d z %d (%I64u / %I64u kB)"
  IDS_OPERDLGCONS_ID,         "ID"

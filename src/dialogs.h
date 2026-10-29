@@ -13,6 +13,11 @@
 
 INT_PTR SftpDialogBox(HINSTANCE module, int resID, HWND parent, DLGPROC proc, LPARAM param);
 void SftpFlushDWMForInteractiveMove(const WINDOWPOS* windowPos);
+
+// Dark mode for plain (non-CDialog) dialog procedures: call WinLibApplyDarkMode(hDlg) on WM_INITDIALOG and
+// route every message through this helper first; when it returns TRUE, return *result from the dialog proc.
+// Handles WM_THEMECHANGED, WM_SETTINGCHANGE and WM_CTLCOLOR*.
+BOOL SftpHandleDarkDlgMessage(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam, INT_PTR* result);
 struct CSftpProfile;
 class CPluginFSInterfaceAbstract;
 void ShowCommandExecDialog(HWND parent, const char* displayCmd, const char* remoteFullCmd, const CSftpProfile& profile, CPluginFSInterfaceAbstract* fs);
@@ -132,31 +137,4 @@ public:
 
 protected:
     virtual INT_PTR DialogProc(UINT uMsg, WPARAM wParam, LPARAM lParam);
-};
-
-//****************************************************************************
-//
-// CCtrlExampleDialog
-//
-
-class CCtrlExampleDialog : public CCommonDialog
-{
-public:
-    CCtrlExampleDialog(HWND hParent);
-
-    //    virtual void Transfer(CTransferInfo &ti);
-
-protected:
-    virtual INT_PTR DialogProc(UINT uMsg, WPARAM wParam, LPARAM lParam);
-    BOOL CreateChilds();
-
-protected:
-    BOOL TimerStarted;
-    char StringTemplate[300];
-    CGUIStaticTextAbstract* Text;
-    CGUIStaticTextAbstract* CachedText;
-    CGUIProgressBarAbstract* Progress;
-    CGUIProgressBarAbstract* Progress2;
-    DWORD ProgressNumber;
-    DWORD LastTickCount;
 };

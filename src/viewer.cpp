@@ -817,6 +817,19 @@ void FillMenuFilter(CGUIMenuPopupAbstract* popup, int cmdFirst, int filterCount)
     }
 }
 
+// rebar colours follow the host dark mode (system colours when dark mode is off)
+static void ApplyViewerRebarTheme(HWND hRebar)
+{
+    if (hRebar == NULL)
+        return;
+    const BOOL useDark = DarkModeShouldUseDarkColors();
+    const COLORREF background = useDark ? DarkModeGetColors().background : GetSysColor(COLOR_BTNFACE);
+    const COLORREF text = useDark ? DarkModeGetColors().readableText : GetSysColor(COLOR_BTNTEXT);
+    SendMessage(hRebar, RB_SETBKCOLOR, 0, (LPARAM)background);
+    SendMessage(hRebar, RB_SETTEXTCOLOR, 0, (LPARAM)text);
+    DarkModeApplyRebarSeparators(hRebar);
+}
+
 LRESULT
 CViewerWindow::WindowProc(UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -850,6 +863,9 @@ CViewerWindow::WindowProc(UINT uMsg, WPARAM wParam, LPARAM lParam)
 
         // we do not want visual styles for the rebar
         SalamanderGUI->DisableWindowVisualStyles(HRebar);
+
+        WinLibApplyDarkMode(HWindow);
+        ApplyViewerRebarTheme(HRebar);
 
         Renderer.CreateEx(WS_EX_STATICEDGE /*WS_EX_CLIENTEDGE*/,
                           CWINDOW_CLASSNAME2,
@@ -1035,8 +1051,24 @@ CViewerWindow::WindowProc(UINT uMsg, WPARAM wParam, LPARAM lParam)
         return 0;
     }
 
+    case WM_THEMECHANGED:
+    case WM_SETTINGCHANGE:
+    {
+        RefreshWinLibDarkModeFromHost();
+        if (uMsg == WM_THEMECHANGED || DarkModeHandleSettingChange(uMsg, lParam))
+        {
+            WinLibApplyDarkMode(HWindow);
+            ApplyViewerRebarTheme(HRebar);
+            RedrawWindow(HWindow, NULL, NULL, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
+        }
+        break;
+    }
+
     case WM_USER_SETTINGCHANGE:
     {
+        // posted by CPluginInterface::Event on colour/configuration/setting changes
+        WinLibApplyDarkMode(HWindow);
+        ApplyViewerRebarTheme(HRebar);
         if (MenuBar != NULL)
             MenuBar->SetFont();
         if (ToolBar != NULL)
