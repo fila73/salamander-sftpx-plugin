@@ -12,6 +12,7 @@
 #include "precomp.h"
 #include <algorithm>
 #include "sftpglue.h"
+#include "sftpcfgmigrate.h"
 
 // plugin interface object whose methods are invoked by Salamander
 CPluginInterface PluginInterface;
@@ -766,61 +767,49 @@ CPluginInterface::Release(HWND parent, BOOL force)
 }
 
 // ---- one-time migration from the pre-rename configuration key ("SFTP" / "SFTP (n)") ----
-// Before the plugin was renamed to SFTPX its configuration lived under
-// <Salamander root>\Plugins Configuration\SFTP. A third-party "sftp" plugin may use the same key name,
-// so a key is taken over only if it carries the values that only this plugin's SaveConfiguration writes
-// together (DefaultSession + FolderList + CloseTransferDlgOnFinish). Passwords are stored as blobs made by
+// Before the plugin was renamed to SFTPX its configuration lived in the sibling key
+// <Salamander root>\Plugins Configuration\SFTP. Only that sibling (then "SFTP (2)".."SFTP (9)", names made
+// unique by Salamander) under the SAME "Plugins Configuration" key as the new SFTPX key is used; other
+// Salamander roots are never scanned (Salamander itself copies the configuration forward on upgrade).
+// A key is taken over only if it carries DefaultSession + FolderList + Version. Passwords are blobs made by
 // Salamander's password manager (not derived from the key name), so they stay decryptable after the copy.
-// The old key is left untouched. The Salamander root is not exposed to plugins, so the Windows registry
-// is searched under Software\Open Salamander Samandarin\* (newest version first); a configuration kept
-// in a .reg file instead of the registry is not reachable and is not migrated.
+// The old key is left untouched.
+//
+// Mechanism: LoadConfiguration gets no parent key, so when the SFTPX key does not exist yet (regKey == NULL
+// or no "Version" value) it only sets SftpMigrationPending and requests a save. The save
+// (SftpFlushPendingConfigSave, run at the end of Connect, before any UI or connection uses the configuration)
+// hands SaveConfiguration the freshly created SFTPX key; there the sibling is located via the kernel path of
+// that key (sftpcfgmigrate.h), loaded over the defaults and then written under SFTPX. Afterwards "Version"
+// exists, so the migration never runs again. If the key is not a real registry key (configuration kept in a
+// .reg file), the migration is silently skipped.
+static bool SftpMigrationPending = false;
+
 static bool SftpIsOwnLegacyConfigKey(HKEY key, CSalamanderRegistryAbstract* registry)
 {
     DWORD size;
     return registry->GetSize(key, "DefaultSession", REG_SZ, size) &&
            registry->GetSize(key, "FolderList", REG_SZ, size) &&
-           registry->GetSize(key, "CloseTransferDlgOnFinish", REG_DWORD, size);
+           registry->GetSize(key, CONFIG_VERSION, REG_DWORD, size);
 }
 
-static bool SftpOpenLegacyConfigKey(HKEY& outKey, CSalamanderRegistryAbstract* registry)
+static bool SftpOpenLegacyConfigKey(HKEY ownKey, HKEY& outKey, CSalamanderRegistryAbstract* registry)
 {
-    static const char* const base = "Software\Open Salamander Samandarin";
-    HKEY hBase;
-    if (RegOpenKeyExA(HKEY_CURRENT_USER, base, 0, KEY_READ, &hBase) != ERROR_SUCCESS)
-        return false;
-    std::vector<std::string> roots;
-    char name[256];
-    for (DWORD i = 0;; i++)
+    for (int n = 0; n <= 9; n++) // "SFTP", then "SFTP (2)" .. "SFTP (9)"
     {
-        DWORD len = sizeof(name);
-        if (RegEnumKeyExA(hBase, i, name, &len, NULL, NULL, NULL, NULL) != ERROR_SUCCESS)
-            break;
-        roots.push_back(name);
-    }
-    RegCloseKey(hBase);
-    std::sort(roots.begin(), roots.end(), [](const std::string& a, const std::string& b)
-              { return _stricmp(a.c_str(), b.c_str()) > 0; });
-    for (size_t r = 0; r < roots.size(); r++)
-    {
-        for (int n = 0; n <= 9; n++) // "SFTP", then "SFTP (2)" .. "SFTP (9)" (made unique by Salamander)
+        if (n == 1)
+            continue;
+        wchar_t name[32] = L"SFTP";
+        if (n > 1)
+            swprintf_s(name, L"SFTP (%d)", n);
+        HKEY k;
+        if (!SftpOpenSiblingConfigKey(ownKey, name, k))
+            continue;
+        if (SftpIsOwnLegacyConfigKey(k, registry))
         {
-            if (n == 1)
-                continue;
-            char path[600];
-            if (n == 0)
-                sprintf_s(path, "%s\%s\Plugins Configuration\SFTP", base, roots[r].c_str());
-            else
-                sprintf_s(path, "%s\%s\Plugins Configuration\SFTP (%d)", base, roots[r].c_str(), n);
-            HKEY k;
-            if (!registry->OpenKey(HKEY_CURRENT_USER, path, k))
-                continue;
-            if (SftpIsOwnLegacyConfigKey(k, registry))
-            {
-                outKey = k;
-                return true;
-            }
-            registry->CloseKey(k);
+            outKey = k;
+            return true;
         }
+        RegCloseKey(k);
     }
     return false;
 }
@@ -945,18 +934,12 @@ CPluginInterface::LoadConfiguration(HWND parent, HKEY regKey, CSalamanderRegistr
 {
     CALL_STACK_MESSAGE1("CPluginInterface::LoadConfiguration(, ,)");
 
-    // new key missing or empty (no "Version" value) -> try the pre-rename "SFTP" key
+    // the SFTPX key is missing or empty (no "Version" value): migrate from "SFTP" at the next save
     DWORD size;
     if (regKey == NULL || !registry->GetSize(regKey, CONFIG_VERSION, REG_DWORD, size))
     {
-        HKEY legacyKey;
-        if (SftpOpenLegacyConfigKey(legacyKey, registry))
-        {
-            SftpLoadConfigFromKey(legacyKey, registry);
-            registry->CloseKey(legacyKey);
-            SftpLegacyPasswordsConverted = true; // write the migrated data under the new key soon
-            return;
-        }
+        SftpMigrationPending = true;
+        SftpLegacyPasswordsConverted = true; // requests the save (see SftpFlushPendingConfigSave)
     }
     SftpLoadConfigFromKey(regKey, registry);
 }
@@ -965,6 +948,21 @@ void WINAPI
 CPluginInterface::SaveConfiguration(HWND parent, HKEY regKey, CSalamanderRegistryAbstract* registry)
 {
     CALL_STACK_MESSAGE1("CPluginInterface::SaveConfiguration(, ,)");
+
+    if (SftpMigrationPending)
+    {
+        SftpMigrationPending = false; // one attempt only
+        DWORD size;
+        if (!registry->GetSize(regKey, CONFIG_VERSION, REG_DWORD, size)) // SFTPX key is still empty
+        {
+            HKEY legacyKey;
+            if (SftpOpenLegacyConfigKey(regKey, legacyKey, registry))
+            {
+                SftpLoadConfigFromKey(legacyKey, registry); // replaces the defaults in memory
+                RegCloseKey(legacyKey);
+            }
+        }
+    }
 
     DWORD v = CURRENT_CONFIG_VERSION;
     registry->SetValue(regKey, CONFIG_VERSION, REG_DWORD, &v, sizeof(DWORD));

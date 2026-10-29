@@ -132,7 +132,7 @@ Vše se vyjednává automaticky dle možností serveru:
 **Požadavky:** Visual Studio 2022 nebo novější (případně Build Tools) s x64 C++ toolsetem a Windows 10/11 SDK. Bez vcpkg: `libssh2` se kompiluje ze `src/libssh2` a importní knihovna pro `libcrypto-3-x64.dll` Open Salamandera se při buildu generuje z `libcrypto-3-x64.def`. SDK pluginů se bere z forku samandarin (`..\..\samandarin\src`, tedy tamní `plugins\shared`); jinou cestu lze zadat přes `/p:SalamanderSdkDir=<adresář obsahující plugins\shared>`.
 
 ```powershell
-MSBuild srccxproj\sftp.vcxproj /p:Configuration=Release /p:Platform=x64
+MSBuild src\vcxproj\sftp.vcxproj /p:Configuration=Release /p:Platform=x64
 ```
 
 Výstup je v `build\Release_x64\` (`sftpx.spl`, `lang\english.slg`, `lang\czech.slg`). Plugin je linkovaný se statickým CRT (`/MT`) a `libssh2` je zabudovaná, takže potřebuje jen `libcrypto-3-x64.dll` z Open Salamandera.

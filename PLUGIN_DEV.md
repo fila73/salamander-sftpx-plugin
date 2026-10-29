@@ -55,7 +55,7 @@ Tím Salamander automaticky nastaví kurzor/focus na složku, ze které uživate
 
 ### Kompilace přes MSVC (MSBuild):
 ```powershell
-MSBuild srccxproj\sftp.vcxproj /p:Configuration=Release /p:Platform=x64
+MSBuild src\vcxproj\sftp.vcxproj /p:Configuration=Release /p:Platform=x64
 ```
 SDK se bere z `..\..\samandarin\src` (přepíše se přes `/p:SalamanderSdkDir=`).
 
