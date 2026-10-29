@@ -60,6 +60,7 @@ STRINGTABLE
  IDS_ALWAYSREMEMBER,         "&Remember this choice and do not ask again"
  IDS_WANTDISCONNECT,         "Do you want to disconnect from SFTP server?"
  IDS_MENU_SHOWTRANSFERS,     "&Show Transfers..."
+ IDS_NOTRANSFERS_ACTIVE,     "There are no active transfers."
  IDS_TR_TOTAL_ITEMS_MB,      "Total: item %d of %d (%.1f / %.1f MB)"
  IDS_TR_TOTAL_ITEMS_KB,      "Total: item %d of %d (%I64u / %I64u kB)"
  IDS_OPERDLGCONS_ID,         "ID"
