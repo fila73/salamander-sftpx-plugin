@@ -61,7 +61,7 @@ SDK se bere z `..\..\samandarin\src` (přepíše se přes `/p:SalamanderSdkDir=`
 
 ### Spuštění testů:
 ```powershell
-testuild_test_path_join.bat   (z VS x64 Developer Prompt; ostatní testy v test\ se kompilují obdobně přes `cl`)
+test\build_test_path_join.bat   (z VS x64 Developer Prompt; ostatní testy v test\ se kompilují obdobně přes `cl`)
 ```
 
 ---
