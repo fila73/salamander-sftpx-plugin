@@ -40,8 +40,6 @@ void ReleaseViewer();
 BOOL InitFS();
 void ReleaseFS();
 
-void SftpInitDarkMode(CSalamanderGeneralAbstract* general);
-void SftpApplyDarkModeToWindow(HWND hwnd);
 
 // FS name assigned by Salamander after the plugin loads
 extern char AssignedFSName[MAX_PATH];

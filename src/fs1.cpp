@@ -275,10 +275,14 @@ struct CInputData
 
 static INT_PTR CALLBACK InputDlgProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+    INT_PTR darkResult = 0;
+    if (SftpHandleDarkDlgMessage(hWnd, msg, wParam, lParam, &darkResult))
+        return darkResult;
     switch (msg)
     {
     case WM_INITDIALOG:
     {
+        WinLibApplyDarkMode(hWnd);
         CInputData* d = (CInputData*)lParam;
         SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)d);
         SetDlgItemText(hWnd, IDC_INPUTPROMPT, d->Prompt);

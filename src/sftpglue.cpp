@@ -432,7 +432,11 @@ void SftpTraceLog(const char* fmt, ...)
     }
     if (!heapOk)
     {
-        MessageBoxA(NULL, full, "SFTP CRITICAL HEAP CORRUPTION", MB_OK | MB_ICONERROR);
+        if (SalamanderGeneral != NULL)
+            SalamanderGeneral->SalMessageBox(SalamanderGeneral->GetMsgBoxParent(), full,
+                                             "SFTP CRITICAL HEAP CORRUPTION", MB_OK | MB_ICONERROR);
+        else
+            MessageBoxA(NULL, full, "SFTP CRITICAL HEAP CORRUPTION", MB_OK | MB_ICONERROR);
     }
 }
 

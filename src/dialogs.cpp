@@ -45,6 +45,44 @@ void SftpFlushDWMForInteractiveMove(const WINDOWPOS* windowPos)
         FlushDWM();
 }
 
+BOOL SftpHandleDarkDlgMessage(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam, INT_PTR* result)
+{
+    switch (msg)
+    {
+    case WM_THEMECHANGED:
+    case WM_SETTINGCHANGE:
+    {
+        RefreshWinLibDarkModeFromHost();
+        if (msg == WM_THEMECHANGED || DarkModeHandleSettingChange(msg, lParam))
+        {
+            WinLibApplyDarkMode(hDlg);
+            RedrawWindow(hDlg, NULL, NULL, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
+            *result = TRUE;
+            return TRUE;
+        }
+        return FALSE;
+    }
+
+    case WM_CTLCOLORDLG:
+    case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLORBTN:
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORLISTBOX:
+    case WM_CTLCOLORMSGBOX:
+    case WM_CTLCOLORSCROLLBAR:
+    {
+        LRESULT brush = 0;
+        if (DarkModeHandleCtlColor(msg, wParam, lParam, brush))
+        {
+            *result = (INT_PTR)brush;
+            return TRUE;
+        }
+        return FALSE;
+    }
+    }
+    return FALSE;
+}
+
 INT_PTR SftpDialogBox(HINSTANCE module, int resID, HWND parent, DLGPROC proc, LPARAM param)
 {
     return DialogBoxParamW(module, MAKEINTRESOURCEW(resID), parent, proc, param);
@@ -800,10 +838,15 @@ static INT_PTR CALLBACK CmdExecDlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPAR
 {
     CCmdExecContext* ctx = (CCmdExecContext*)GetWindowLongPtr(hDlg, GWLP_USERDATA);
 
+    INT_PTR darkResult = 0;
+    if (SftpHandleDarkDlgMessage(hDlg, uMsg, wParam, lParam, &darkResult))
+        return darkResult;
+
     switch (uMsg)
     {
     case WM_INITDIALOG:
     {
+        WinLibApplyDarkMode(hDlg);
         ctx = (CCmdExecContext*)lParam;
         SetWindowLongPtr(hDlg, GWLP_USERDATA, (LONG_PTR)ctx);
         ctx->hDlg = hDlg;

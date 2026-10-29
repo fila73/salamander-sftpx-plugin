@@ -13,6 +13,11 @@
 
 INT_PTR SftpDialogBox(HINSTANCE module, int resID, HWND parent, DLGPROC proc, LPARAM param);
 void SftpFlushDWMForInteractiveMove(const WINDOWPOS* windowPos);
+
+// Dark mode for plain (non-CDialog) dialog procedures: call WinLibApplyDarkMode(hDlg) on WM_INITDIALOG and
+// route every message through this helper first; when it returns TRUE, return *result from the dialog proc.
+// Handles WM_THEMECHANGED, WM_SETTINGCHANGE and WM_CTLCOLOR*.
+BOOL SftpHandleDarkDlgMessage(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam, INT_PTR* result);
 struct CSftpProfile;
 class CPluginFSInterfaceAbstract;
 void ShowCommandExecDialog(HWND parent, const char* displayCmd, const char* remoteFullCmd, const CSftpProfile& profile, CPluginFSInterfaceAbstract* fs);

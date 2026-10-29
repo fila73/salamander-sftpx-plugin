@@ -90,16 +90,8 @@ INT_PTR CSftpConflictDlg::DialogProc(UINT uMsg, WPARAM wParam, LPARAM lParam)
     {
     case WM_INITDIALOG:
     {
-#ifdef USE_DARKMODELIB
+        // this handler returns FALSE below and so skips CDialog::DialogProc: apply dark mode explicitly
         WinLibApplyDarkMode(HWindow);
-#endif
-        SftpApplyDarkModeToWindow(HWindow);
-        if (PluginDarkMode_ShouldUseDark())
-        {
-            HWND hEdit = GetDlgItem(HWindow, IDE_SCRD_TGTNAME);
-            if (hEdit != NULL)
-                SetWindowTheme(hEdit, L"DarkMode_CFD", NULL);
-        }
 
         if (CenterWnd != NULL)
         {
@@ -219,58 +211,7 @@ INT_PTR CSftpConflictDlg::DialogProc(UINT uMsg, WPARAM wParam, LPARAM lParam)
         break;
     }
 
-    case WM_THEMECHANGED:
-    case WM_SETTINGCHANGE:
-    {
-#ifdef USE_DARKMODELIB
-        RefreshWinLibDarkModeFromHost();
-        WinLibApplyDarkMode(HWindow);
-#endif
-        SftpApplyDarkModeToWindow(HWindow);
-        PluginDarkMode_HandleThemeMessage(HWindow, uMsg, lParam);
-        InvalidateRect(HWindow, NULL, TRUE);
-        break;
-    }
-
-    case WM_CTLCOLORDLG:
-    case WM_CTLCOLORSTATIC:
-    case WM_CTLCOLOREDIT:
-    {
-#ifdef USE_DARKMODELIB
-        LRESULT brush = 0;
-        if (DarkModeHandleCtlColor(uMsg, wParam, lParam, brush))
-            return (INT_PTR)brush;
-#endif
-        LRESULT darkBrush = 0;
-        if (PluginDarkMode_HandleCtlColor(uMsg, wParam, lParam, &darkBrush))
-            return (INT_PTR)darkBrush;
-        if (PluginDarkMode_ShouldUseDark())
-        {
-            HDC hdc = (HDC)wParam;
-            if (uMsg == WM_CTLCOLOREDIT)
-            {
-                SetTextColor(hdc, RGB(220, 220, 220));
-                SetBkColor(hdc, RGB(45, 45, 45));
-                static HBRUSH s_darkEditBrush = CreateSolidBrush(RGB(45, 45, 45));
-                return (INT_PTR)s_darkEditBrush;
-            }
-            else
-            {
-                SetBkMode(hdc, TRANSPARENT);
-                SetTextColor(hdc, RGB(220, 220, 220));
-                SetBkColor(hdc, RGB(32, 32, 32));
-                static HBRUSH s_darkBgBrush = CreateSolidBrush(RGB(32, 32, 32));
-                return (INT_PTR)s_darkBgBrush;
-            }
-        }
-        break;
-    }
-
-    case WM_CTLCOLORBTN:
-    {
-        // Do not return solid dark brush for buttons, themed via SetWindowTheme
-        break;
-    }
+    // WM_THEMECHANGED / WM_SETTINGCHANGE / WM_CTLCOLOR* are handled by CDialog::DialogProc (winliblt)
     }
 
     return CCommonDialog::DialogProc(uMsg, wParam, lParam);

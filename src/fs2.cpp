@@ -120,10 +120,7 @@ CDeleteProgressDlg::DialogProc(UINT uMsg, WPARAM wParam, LPARAM lParam)
     {
     case WM_INITDIALOG:
     {
-#ifdef USE_DARKMODELIB
-        WinLibApplyDarkMode(HWindow);
-#endif
-        SftpApplyDarkModeToWindow(HWindow);
+        // dark mode: handled by CDialog::DialogProc (winliblt)
         // use the Salamander-styled progress bar
         ProgressBar = SalamanderGUI->AttachProgressBar(HWindow, IDP_PROGRESSBAR);
         if (ProgressBar == NULL)
@@ -133,43 +130,6 @@ CDeleteProgressDlg::DialogProc(UINT uMsg, WPARAM wParam, LPARAM lParam)
         }
 
         break; // let DefDlgProc handle focus
-    }
-
-    case WM_THEMECHANGED:
-    case WM_SETTINGCHANGE:
-    {
-#ifdef USE_DARKMODELIB
-        RefreshWinLibDarkModeFromHost();
-        WinLibApplyDarkMode(HWindow);
-#endif
-        SftpApplyDarkModeToWindow(HWindow);
-        PluginDarkMode_HandleThemeMessage(HWindow, uMsg, lParam);
-        InvalidateRect(HWindow, NULL, TRUE);
-        break;
-    }
-
-    case WM_CTLCOLORDLG:
-    case WM_CTLCOLORSTATIC:
-    case WM_CTLCOLORBTN:
-    {
-#ifdef USE_DARKMODELIB
-        LRESULT brush = 0;
-        if (DarkModeHandleCtlColor(uMsg, wParam, lParam, brush))
-            return (INT_PTR)brush;
-#endif
-        LRESULT darkBrush = 0;
-        if (PluginDarkMode_HandleCtlColor(uMsg, wParam, lParam, &darkBrush))
-            return (INT_PTR)darkBrush;
-        if (PluginDarkMode_ShouldUseDark())
-        {
-            HDC hdc = (HDC)wParam;
-            SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, RGB(220, 220, 220));
-            SetBkColor(hdc, RGB(32, 32, 32));
-            static HBRUSH s_darkBgBrush = CreateSolidBrush(RGB(32, 32, 32));
-            return (INT_PTR)s_darkBgBrush;
-        }
-        break;
     }
 
     case WM_COMMAND:
@@ -302,52 +262,12 @@ CCalcSizeProgressDlg::DialogProc(UINT uMsg, WPARAM wParam, LPARAM lParam)
     {
     case WM_INITDIALOG:
     {
-#ifdef USE_DARKMODELIB
-        WinLibApplyDarkMode(HWindow);
-#endif
-        SftpApplyDarkModeToWindow(HWindow);
+        // dark mode: handled by CDialog::DialogProc (winliblt)
         ProgressBar = SalamanderGUI->AttachProgressBar(HWindow, IDP_PROGRESSBAR);
         if (ProgressBar == NULL)
         {
             DestroyWindow(HWindow);
             return FALSE;
-        }
-        break;
-    }
-
-    case WM_THEMECHANGED:
-    case WM_SETTINGCHANGE:
-    {
-#ifdef USE_DARKMODELIB
-        RefreshWinLibDarkModeFromHost();
-        WinLibApplyDarkMode(HWindow);
-#endif
-        SftpApplyDarkModeToWindow(HWindow);
-        PluginDarkMode_HandleThemeMessage(HWindow, uMsg, lParam);
-        InvalidateRect(HWindow, NULL, TRUE);
-        break;
-    }
-
-    case WM_CTLCOLORDLG:
-    case WM_CTLCOLORSTATIC:
-    case WM_CTLCOLORBTN:
-    {
-#ifdef USE_DARKMODELIB
-        LRESULT brush = 0;
-        if (DarkModeHandleCtlColor(uMsg, wParam, lParam, brush))
-            return (INT_PTR)brush;
-#endif
-        LRESULT darkBrush = 0;
-        if (PluginDarkMode_HandleCtlColor(uMsg, wParam, lParam, &darkBrush))
-            return (INT_PTR)darkBrush;
-        if (PluginDarkMode_ShouldUseDark())
-        {
-            HDC hdc = (HDC)wParam;
-            SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, RGB(220, 220, 220));
-            SetBkColor(hdc, RGB(32, 32, 32));
-            static HBRUSH s_darkBgBrush = CreateSolidBrush(RGB(32, 32, 32));
-            return (INT_PTR)s_darkBgBrush;
         }
         break;
     }
@@ -1173,30 +1093,7 @@ void CSftpTransferProgressDlg::ShowControlsAndChangeSize(BOOL simple)
     SetDlgItemText(HWindow, IDB_SHOWDETAILS, simple ? "Detaily >>" : "<< Detaily");
     if (!simple)
     {
-        SftpApplyDarkModeToWindow(HWindow);
-        if (PluginDarkMode_ShouldUseDark())
-        {
-            COLORREF textCol = RGB(220, 220, 220);
-            COLORREF bgCol = RGB(32, 32, 32);
-            if (ConsListView)
-            {
-                ListView_SetTextColor(ConsListView, textCol);
-                ListView_SetTextBkColor(ConsListView, bgCol);
-                ListView_SetBkColor(ConsListView, bgCol);
-                SetWindowTheme(ConsListView, L"DarkMode_Explorer", NULL);
-                HWND hHdr = ListView_GetHeader(ConsListView);
-                if (hHdr) SetWindowTheme(hHdr, L"DarkMode_ItemsView", NULL);
-            }
-            if (ItemsListView)
-            {
-                ListView_SetTextColor(ItemsListView, textCol);
-                ListView_SetTextBkColor(ItemsListView, bgCol);
-                ListView_SetBkColor(ItemsListView, bgCol);
-                SetWindowTheme(ItemsListView, L"DarkMode_Explorer", NULL);
-                HWND hHdr = ListView_GetHeader(ItemsListView);
-                if (hHdr) SetWindowTheme(hHdr, L"DarkMode_ItemsView", NULL);
-            }
-        }
+        WinLibApplyDarkMode(HWindow); // themes the (now visible) list views and headers
         LayoutDialog();
         if (ItemsListView != NULL)
         {
@@ -1444,10 +1341,8 @@ INT_PTR CSftpTransferProgressDlg::DialogProc(UINT uMsg, WPARAM wParam, LPARAM lP
     {
     case WM_INITDIALOG:
     {
-#ifdef USE_DARKMODELIB
+        // this handler returns TRUE below and so skips CDialog::DialogProc: apply dark mode explicitly
         WinLibApplyDarkMode(HWindow);
-#endif
-        SftpApplyDarkModeToWindow(HWindow);
         SftpRegisterTransferDlgHwnd(HWindow);
 
         const char* fromCName = FromConnName[0] != 0 ? FromConnName : ConnName;
@@ -1890,48 +1785,7 @@ INT_PTR CSftpTransferProgressDlg::DialogProc(UINT uMsg, WPARAM wParam, LPARAM lP
         return TRUE;
     }
 
-    case WM_THEMECHANGED:
-    case WM_SETTINGCHANGE:
-    {
-#ifdef USE_DARKMODELIB
-        RefreshWinLibDarkModeFromHost();
-        WinLibApplyDarkMode(HWindow);
-#endif
-        SftpApplyDarkModeToWindow(HWindow);
-        PluginDarkMode_HandleThemeMessage(HWindow, uMsg, lParam);
-        InvalidateRect(HWindow, NULL, TRUE);
-        break;
-    }
-
-    case WM_CTLCOLORDLG:
-    case WM_CTLCOLORSTATIC:
-    {
-#ifdef USE_DARKMODELIB
-        LRESULT brush = 0;
-        if (DarkModeHandleCtlColor(uMsg, wParam, lParam, brush))
-            return (INT_PTR)brush;
-#endif
-        LRESULT darkBrush = 0;
-        if (PluginDarkMode_HandleCtlColor(uMsg, wParam, lParam, &darkBrush))
-            return (INT_PTR)darkBrush;
-        if (PluginDarkMode_ShouldUseDark())
-        {
-            HDC hdc = (HDC)wParam;
-            SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, RGB(220, 220, 220));
-            SetBkColor(hdc, RGB(32, 32, 32));
-            static HBRUSH s_darkBgBrush = CreateSolidBrush(RGB(32, 32, 32));
-            return (INT_PTR)s_darkBgBrush;
-        }
-        break;
-    }
-
-    case WM_CTLCOLORBTN:
-    {
-        // DO NOT return a solid dark brush for standard push buttons!
-        // Button theming is handled via SetWindowTheme(child, L"DarkMode_Explorer", NULL).
-        break;
-    }
+    // WM_THEMECHANGED / WM_SETTINGCHANGE / WM_CTLCOLOR* are handled by CDialog::DialogProc (winliblt)
 
     case WM_COMMAND:
     {
@@ -4979,10 +4833,14 @@ static BOOL SftpRunWorkerSync(CSftpTransferWorker* worker, CSftpTransferProgress
 static int g_ChmodOctal = 0644;
 static INT_PTR CALLBACK ChmodDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
+    INT_PTR darkResult = 0;
+    if (SftpHandleDarkDlgMessage(hwnd, msg, wp, lp, &darkResult))
+        return darkResult;
     switch (msg)
     {
     case WM_INITDIALOG:
     {
+        WinLibApplyDarkMode(hwnd);
         HWND par = GetParent(hwnd);
         if (par != NULL)
             SalamanderGeneral->MultiMonCenterWindow(hwnd, par, TRUE);
