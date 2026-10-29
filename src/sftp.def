@@ -1,4 +1,4 @@
-LIBRARY SFTP.SPL
+LIBRARY SFTPX.SPL
 
 EXPORTS
     SalamanderPluginEntry

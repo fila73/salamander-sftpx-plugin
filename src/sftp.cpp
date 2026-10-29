@@ -10,6 +10,7 @@
 //****************************************************************************
 
 #include "precomp.h"
+#include <algorithm>
 #include "sftpglue.h"
 
 // plugin interface object whose methods are invoked by Salamander
@@ -23,7 +24,7 @@ CPluginInterfaceForThumbLoader InterfaceForThumbLoader;
 
 // global data
 const char* PluginNameEN = "SFTP";    // untranslated plugin name, used before the language module loads and for debugging
-const char* PluginNameShort = "SFTP"; // plugin name (short form, without spaces)
+const char* PluginNameShort = "SFTPX"; // plugin name (short form, without spaces)
 
 char Str[MAX_PATH] = "default";
 int Number = 0;
@@ -592,7 +593,7 @@ CPluginInterfaceAbstract* WINAPI SalamanderPluginEntry(CSalamanderPluginEntryAbs
     SalamanderGUI = salamander->GetSalamanderGUI();
 
     // configure the help file name
-    SalamanderGeneral->SetHelpFileName("sftp.chm");
+    SalamanderGeneral->SetHelpFileName("sftpx.chm");
 
     //  BYTE c = SalamanderGeneral->GetUserDefaultCharset();
 
@@ -627,7 +628,7 @@ CPluginInterfaceAbstract* WINAPI SalamanderPluginEntry(CSalamanderPluginEntryAbs
                                    FUNCTION_LOADSAVECONFIGURATION |
                                        FUNCTION_FILESYSTEM,
                                    VERSINFO_VERSION_NO_PLATFORM, VERSINFO_COPYRIGHT, LoadStr(IDS_PLUGIN_DESCRIPTION),
-                                   PluginNameShort, NULL, "sftp");
+                                   PluginNameShort, NULL, "sftpx");
 
     // request notifications about master password creation, changes, and removal
     SalamanderGeneral->SetPluginUsesPasswordManager();
@@ -764,11 +765,68 @@ CPluginInterface::Release(HWND parent, BOOL force)
     return ret;
 }
 
-void WINAPI
-CPluginInterface::LoadConfiguration(HWND parent, HKEY regKey, CSalamanderRegistryAbstract* registry)
+// ---- one-time migration from the pre-rename configuration key ("SFTP" / "SFTP (n)") ----
+// Before the plugin was renamed to SFTPX its configuration lived under
+// <Salamander root>\Plugins Configuration\SFTP. A third-party "sftp" plugin may use the same key name,
+// so a key is taken over only if it carries the values that only this plugin's SaveConfiguration writes
+// together (DefaultSession + FolderList + CloseTransferDlgOnFinish). Passwords are stored as blobs made by
+// Salamander's password manager (not derived from the key name), so they stay decryptable after the copy.
+// The old key is left untouched. The Salamander root is not exposed to plugins, so the Windows registry
+// is searched under Software\Open Salamander Samandarin\* (newest version first); a configuration kept
+// in a .reg file instead of the registry is not reachable and is not migrated.
+static bool SftpIsOwnLegacyConfigKey(HKEY key, CSalamanderRegistryAbstract* registry)
 {
-    CALL_STACK_MESSAGE1("CPluginInterface::LoadConfiguration(, ,)");
+    DWORD size;
+    return registry->GetSize(key, "DefaultSession", REG_SZ, size) &&
+           registry->GetSize(key, "FolderList", REG_SZ, size) &&
+           registry->GetSize(key, "CloseTransferDlgOnFinish", REG_DWORD, size);
+}
 
+static bool SftpOpenLegacyConfigKey(HKEY& outKey, CSalamanderRegistryAbstract* registry)
+{
+    static const char* const base = "Software\Open Salamander Samandarin";
+    HKEY hBase;
+    if (RegOpenKeyExA(HKEY_CURRENT_USER, base, 0, KEY_READ, &hBase) != ERROR_SUCCESS)
+        return false;
+    std::vector<std::string> roots;
+    char name[256];
+    for (DWORD i = 0;; i++)
+    {
+        DWORD len = sizeof(name);
+        if (RegEnumKeyExA(hBase, i, name, &len, NULL, NULL, NULL, NULL) != ERROR_SUCCESS)
+            break;
+        roots.push_back(name);
+    }
+    RegCloseKey(hBase);
+    std::sort(roots.begin(), roots.end(), [](const std::string& a, const std::string& b)
+              { return _stricmp(a.c_str(), b.c_str()) > 0; });
+    for (size_t r = 0; r < roots.size(); r++)
+    {
+        for (int n = 0; n <= 9; n++) // "SFTP", then "SFTP (2)" .. "SFTP (9)" (made unique by Salamander)
+        {
+            if (n == 1)
+                continue;
+            char path[600];
+            if (n == 0)
+                sprintf_s(path, "%s\%s\Plugins Configuration\SFTP", base, roots[r].c_str());
+            else
+                sprintf_s(path, "%s\%s\Plugins Configuration\SFTP (%d)", base, roots[r].c_str(), n);
+            HKEY k;
+            if (!registry->OpenKey(HKEY_CURRENT_USER, path, k))
+                continue;
+            if (SftpIsOwnLegacyConfigKey(k, registry))
+            {
+                outKey = k;
+                return true;
+            }
+            registry->CloseKey(k);
+        }
+    }
+    return false;
+}
+
+static void SftpLoadConfigFromKey(HKEY regKey, CSalamanderRegistryAbstract* registry)
+{
     if (regKey != NULL) // load from the registry
     {
         if (!registry->GetValue(regKey, CONFIG_VERSION, REG_DWORD, &ConfigVersion, sizeof(DWORD)))
@@ -880,6 +938,27 @@ CPluginInterface::LoadConfiguration(HWND parent, HKEY regKey, CSalamanderRegistr
             registry->CloseKey(serversKey);
         }
     }
+}
+
+void WINAPI
+CPluginInterface::LoadConfiguration(HWND parent, HKEY regKey, CSalamanderRegistryAbstract* registry)
+{
+    CALL_STACK_MESSAGE1("CPluginInterface::LoadConfiguration(, ,)");
+
+    // new key missing or empty (no "Version" value) -> try the pre-rename "SFTP" key
+    DWORD size;
+    if (regKey == NULL || !registry->GetSize(regKey, CONFIG_VERSION, REG_DWORD, size))
+    {
+        HKEY legacyKey;
+        if (SftpOpenLegacyConfigKey(legacyKey, registry))
+        {
+            SftpLoadConfigFromKey(legacyKey, registry);
+            registry->CloseKey(legacyKey);
+            SftpLegacyPasswordsConverted = true; // write the migrated data under the new key soon
+            return;
+        }
+    }
+    SftpLoadConfigFromKey(regKey, registry);
 }
 
 void WINAPI

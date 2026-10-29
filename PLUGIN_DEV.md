@@ -7,7 +7,7 @@ Tento dokument slouží jako přehled architektury, vývojových pravidel a osv�
 ## 1. Architektura a adresářová struktura pluginu
 
 Plugin do Salamandera se skládá z:
-- **`sftp.spl`** – Dynamická knihovna pluginu (Windows DLL přejmenovaná na `.spl`).
+- **`sftpx.spl`** – Dynamická knihovna pluginu (Windows DLL přejmenovaná na `.spl`).
 - **`english.slg`, `czech.slg`** – Jazykové knihovny s přeloženými texty a dialogy.
 
 ### Adresářová struktura:
@@ -98,11 +98,11 @@ Při výpočtu velikosti složek (`Calculate Size (server)`):
 
 Pro maximální přenositelnost bez nutnosti instalovat VC++ runtime:
 - **Statické runtimes**: projekt používá `/MT` (statické CRT), takže není potřeba VC++ redistributable.
-- **Statický libssh2**: Slinkován přímo do `sftp.spl` ze zdrojů `src/libssh2` (OpenSSL backend) (není potřeba žádná externí `libssh2.dll` ani `z.dll`).
-- **Knihovna OpenSSL (`libcrypto-3-x64.dll`)**: `sftp.spl` importuje `libcrypto-3-x64.dll` standardním PE importem. V Open Salamandru se tato knihovna nachází přímo v kořenovém adresáři aplikace (`C:\Apps\samandarin\libcrypto-3-x64.dll`). Starý kód `LoadBundledLibssh2()`, který ji načítal explicitně s `LOAD_WITH_ALTERED_SEARCH_PATH`, byl odstraněn, protože vedl k duplicitnímu načtení druhého OpenSSL runtime a poškození heapu (`0xc0000374`).
+- **Statický libssh2**: Slinkován přímo do `sftpx.spl` ze zdrojů `src/libssh2` (OpenSSL backend) (není potřeba žádná externí `libssh2.dll` ani `z.dll`).
+- **Knihovna OpenSSL (`libcrypto-3-x64.dll`)**: `sftpx.spl` importuje `libcrypto-3-x64.dll` standardním PE importem. V Open Salamandru se tato knihovna nachází přímo v kořenovém adresáři aplikace (`C:\Apps\samandarin\libcrypto-3-x64.dll`). Starý kód `LoadBundledLibssh2()`, který ji načítal explicitně s `LOAD_WITH_ALTERED_SEARCH_PATH`, byl odstraněn, protože vedl k duplicitnímu načtení druhého OpenSSL runtime a poškození heapu (`0xc0000374`).
 - **Ověření závislostí**:
   ```powershell
-  dumpbin /dependents sftp.spl
+  dumpbin /dependents sftpx.spl
   ```
   Výstup smí obsahovat pouze standardní Windows systémové knihovny a `libcrypto-3-x64.dll`.
 - **Statická analýza**:

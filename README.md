@@ -12,6 +12,8 @@ A full-featured **SFTP and SCP** client as a file-system plugin for [Open Salama
 
 ## 🚀 Key Differences & Enhancements (vs. Upstream)
 
+> **Renamed to SFTPX.** The plugin is built as `sftpx.spl`, shows as "SFTPX", uses FS name `sftpx:` and configuration key `SFTPX`, so it can coexist with a different `sftp` plugin. On first load with an empty `SFTPX` key it copies the configuration (including encrypted passwords, which do not depend on the key name) from the old `SFTP` key, but only if that key carries values written exclusively by this plugin. The old key is left untouched. Only a configuration stored in the Windows registry is migrated.
+
 This fork introduces significant stability fixes, architecture improvements, enhanced performance, and new features:
 
 | Feature / Area | Original Upstream ([Dupl3xx](https://github.com/Dupl3xx/salamander-sftp-plugin)) | This Enhanced Fork ([fila73](https://github.com/fila73/salamander-sftp-plugin)) |
@@ -133,7 +135,7 @@ Negotiated automatically based on server capabilities:
 MSBuild srccxproj\sftp.vcxproj /p:Configuration=Release /p:Platform=x64
 ```
 
-Output goes to `build\Release_x64\` (`sftp.spl`, `lang\english.slg`, `lang\czech.slg`). The plugin is linked with the static CRT (`/MT`) and libssh2 is embedded, so it only needs `libcrypto-3-x64.dll` from Open Salamander.
+Output goes to `build\Release_x64\` (`sftpx.spl`, `lang\english.slg`, `lang\czech.slg`). The plugin is linked with the static CRT (`/MT`) and libssh2 is embedded, so it only needs `libcrypto-3-x64.dll` from Open Salamander.
 
 ---
 

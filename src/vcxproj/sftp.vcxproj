@@ -37,7 +37,7 @@
   <PropertyGroup>
     <OutDir>$(SftpOutDir)</OutDir>
     <IntDir>$(SftpOutDir)obj\sftp\</IntDir>
-    <TargetName>sftp</TargetName>
+    <TargetName>sftpx</TargetName>
     <TargetExt>.spl</TargetExt>
     <IgnoreImportLibrary>true</IgnoreImportLibrary>
     <LinkIncremental>false</LinkIncremental>

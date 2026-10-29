@@ -12,6 +12,8 @@ Plnohodnotný **SFTP a SCP** klient jako souborový (FS) doplněk pro [Open Sala
 
 ## 🚀 Hlavní rozdíly a vylepšení (oproti původní verzi)
 
+> **Přejmenováno na SFTPX.** Plugin se sestavuje jako `sftpx.spl`, zobrazuje se jako "SFTPX", používá FS jméno `sftpx:` a konfigurační klíč `SFTPX`, takže může koexistovat s jiným pluginem `sftp`. Při prvním načtení s prázdným klíčem `SFTPX` zkopíruje konfiguraci (včetně šifrovaných hesel, která na jménu klíče nezávisí) ze starého klíče `SFTP`, ale jen pokud obsahuje hodnoty, které zapisuje výhradně tento plugin. Starý klíč zůstává beze změny. Migruje se jen konfigurace uložená v registru Windows.
+
 Tento fork přináší řadu oprav stability, architektonických vylepšení, zvýšení výkonu a nových funkcí:
 
 | Oblast / Funkce | Původní verze ([Dupl3xx](https://github.com/Dupl3xx/salamander-sftp-plugin)) | Tento rozšířený fork ([fila73](https://github.com/fila73/salamander-sftp-plugin)) |
@@ -133,7 +135,7 @@ Vše se vyjednává automaticky dle možností serveru:
 MSBuild srccxproj\sftp.vcxproj /p:Configuration=Release /p:Platform=x64
 ```
 
-Výstup je v `build\Release_x64\` (`sftp.spl`, `lang\english.slg`, `lang\czech.slg`). Plugin je linkovaný se statickým CRT (`/MT`) a `libssh2` je zabudovaná, takže potřebuje jen `libcrypto-3-x64.dll` z Open Salamandera.
+Výstup je v `build\Release_x64\` (`sftpx.spl`, `lang\english.slg`, `lang\czech.slg`). Plugin je linkovaný se statickým CRT (`/MT`) a `libssh2` je zabudovaná, takže potřebuje jen `libcrypto-3-x64.dll` z Open Salamandera.
 
 ---
 

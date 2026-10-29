@@ -22,7 +22,7 @@
 
 STRINGTABLE
 {
- IDS_PLUGINNAME,             "SFTP"
+ IDS_PLUGINNAME,             "SFTPX"
  IDS_ABOUT,                  "About SFTP plugin"
  IDS_PLUGIN_DESCRIPTION,     "SFTP client (SSH File Transfer Protocol) built on libssh2."
  IDS_PLUGIN_HOME,            "https://github.com/Dupl3xx/salamander-sftp-plugin"
