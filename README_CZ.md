@@ -16,7 +16,7 @@ Plnohodnotný **SFTP a SCP** klient jako souborový (FS) doplněk pro [Open Sala
 
 Tento fork přináší řadu oprav stability, architektonických vylepšení, zvýšení výkonu a nových funkcí:
 
-| Oblast / Funkce | Původní verze ([Dupl3xx](https://github.com/Dupl3xx/salamander-sftp-plugin)) | Tento rozšířený fork ([fila73](https://github.com/fila73/salamander-sftp-plugin)) |
+| Oblast / Funkce | Původní verze ([Dupl3xx](https://github.com/Dupl3xx/salamander-sftp-plugin)) | Tento rozšířený fork ([fila73](https://github.com/fila73/salamander-sftpx-plugin)) |
 |---|---|---|
 | **Sestavení a závislosti** | Vyžadovalo externí `libssh2.dll` a dynamické MinGW runtime DLL | **Samostatný build bez závislostí**: `libssh2` je přímo staticky integrován; C/C++ runtime je linkován staticky (`/MT`). Vyžaduje pouze standardní `libcrypto-3-x64.dll`. |
 | **Vlastní SFTP server a přepnutí uživatele** | Pouze výchozí SFTP subsystém SSHD | **Vlastní příkaz `sftp-server` / `sudo` / `su`**: Možnost spustit SFTP subsystém s právy `root` přes `sudo`, přepnout se na servisního uživatele (např. `www-data`), zadat nestandardní cestu k binárce a automatické obalení příkazové řádky. |

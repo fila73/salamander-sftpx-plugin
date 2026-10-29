@@ -48,7 +48,7 @@ Při testování meziprotokolových přenosů v Open Salamanderu došlo ke dvěm
 
 ### Automatizované testy
 - Kompilace pluginu:
-  `mingw32-make CROSS_COMPILE= all`
+  `MSBuild srcvcxprojsftp.vcxproj /p:Configuration=Release /p:Platform=x64`
 - Spuštění existujících testů:
   `./test_worker.exe`
   `./test_path_hottrack.exe`

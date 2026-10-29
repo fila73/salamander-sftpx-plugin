@@ -35,3 +35,7 @@ test/sftpglue_paths.inc
 *.obj
 .vs/
 x64/
+test/*.exe
+test/*.obj
+test/*.TXT
+test/crashlog.txt

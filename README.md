@@ -16,7 +16,7 @@ A full-featured **SFTP and SCP** client as a file-system plugin for [Open Salama
 
 This fork introduces significant stability fixes, architecture improvements, enhanced performance, and new features:
 
-| Feature / Area | Original Upstream ([Dupl3xx](https://github.com/Dupl3xx/salamander-sftp-plugin)) | This Enhanced Fork ([fila73](https://github.com/fila73/salamander-sftp-plugin)) |
+| Feature / Area | Original Upstream ([Dupl3xx](https://github.com/Dupl3xx/salamander-sftp-plugin)) | This Enhanced Fork ([fila73](https://github.com/fila73/salamander-sftpx-plugin)) |
 |---|---|---|
 | **Build & Dependencies** | Required external `libssh2.dll` and dynamic MinGW runtime DLLs | **Standalone zero-dependency build**: `libssh2` is statically embedded; the C/C++ runtime is linked statically (`/MT`). Only `libcrypto-3-x64.dll` is required. |
 | **Custom SFTP Server & Elevation** | Only default SSHD SFTP subsystem | **Custom `sftp-server` command support**: Execute SFTP under `sudo` / `su -c` or specific user (e.g. `www-data`), custom binary paths on NAS/BSD, and automatic prefix propagation to command-line bar executions. |

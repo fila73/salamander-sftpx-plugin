@@ -13,7 +13,7 @@ Plugin do Salamandera se skládá z:
 ### Adresářová struktura:
 
 ```
-salamander-sftp-plugin/
+salamander-sftpx-plugin/
 ├── src/
 │   ├── sftp.cpp            # Hlavní vstup, SalamanderPluginEntry2, registrace FS
 │   ├── sftp.h              # Společné deklarace rozhraní a struktur
