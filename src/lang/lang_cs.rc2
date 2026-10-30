@@ -86,5 +86,7 @@ STRINGTABLE
  IDS_OPERDLG_STATUSTEXT,     "%s z %s, celková rychlost přenosu: %.2f MB/s"
  IDS_OPERDLG_STATUSCONN,     "%s z %s (za %.2f MB/s), %d %%, zbývající čas: %s"
  IDS_OPERDLGOPERS_TITLE,     "Operace: (%d / %d)"
+ IDS_OPERDLG_SCANNING,       "Zjišťuji velikost: %u souborů, %s..."
+ IDS_OPERDLG_SCANTIME,       "(zjišťuji velikost)"
 }
 

@@ -1197,7 +1197,11 @@ void CSftpTransferProgressDlg::UpdateFromWorker()
 
     // 2. Remaining time
     char remBuf[64];
-    if (snap.IsPaused)
+    if (snap.IsScanning)
+    {
+        lstrcpynA(remBuf, LoadStr(IDS_OPERDLG_SCANTIME), sizeof(remBuf));
+    }
+    else if (snap.IsPaused)
     {
         strcpy_s(remBuf, "(pozastaveno)");
     }
@@ -1255,6 +1259,18 @@ void CSftpTransferProgressDlg::UpdateFromWorker()
         char errSuffix[32];
         _snprintf_s(errSuffix, sizeof(errSuffix), _TRUNCATE, ", %u chyb", (unsigned)errCount);
         strcat_s(StatusCache, errSuffix);
+    }
+    if (snap.IsScanning)
+    {
+        // Pre-scan of the queued directories: total size is not known yet, bars stay at 0
+        char scanSize[32];
+        if (snap.ScannedBytes >= 1048576)
+            _snprintf_s(scanSize, sizeof(scanSize), _TRUNCATE, "%.1f MB", (double)snap.ScannedBytes / 1048576.0);
+        else
+            _snprintf_s(scanSize, sizeof(scanSize), _TRUNCATE, "%I64u kB", snap.ScannedBytes / 1024);
+        _snprintf_s(StatusCache, sizeof(StatusCache), _TRUNCATE, LoadStr(IDS_OPERDLG_SCANNING), snap.ScannedFiles, scanSize);
+        TotalProgressCache = 0;
+        FileProgressCache = 0;
     }
     SetDlgItemText(HWindow, IDT_TR_STATUS, StatusCache);
 
