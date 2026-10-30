@@ -919,6 +919,17 @@ void CSftpTransferProgressDlg::LayoutDialog()
         curX -= (btnW + gap);
         hdwp = DeferWindowPos(hdwp, GetDlgItem(HWindow, IDCANCEL), NULL, curX, btnY, btnW, btnH, SWP_NOZORDER);
         curX -= (btnW + gap);
+        HWND hSkipBtn = GetDlgItem(HWindow, IDB_SKIPSCAN);
+        if (hSkipBtn != NULL)
+        {
+            RECT rSkip;
+            GetWindowRect(hSkipBtn, &rSkip);
+            int skipW = rSkip.right - rSkip.left;
+            if (skipW <= 0) skipW = btnW;
+            curX -= (skipW - btnW); // the skip button is wider than the others
+            hdwp = DeferWindowPos(hdwp, hSkipBtn, NULL, curX, btnY, skipW, btnH, SWP_NOZORDER);
+            curX -= (btnW + gap);
+        }
         hdwp = DeferWindowPos(hdwp, GetDlgItem(HWindow, IDB_PAUSERESUME), NULL, curX, btnY, btnW, btnH, SWP_NOZORDER);
         curX -= (btnW + gap);
         hdwp = DeferWindowPos(hdwp, GetDlgItem(HWindow, IDB_SHOWERRORS), NULL, curX, btnY, btnW, btnH, SWP_NOZORDER);
@@ -1273,6 +1284,11 @@ void CSftpTransferProgressDlg::UpdateFromWorker()
         FileProgressCache = 0;
     }
     SetDlgItemText(HWindow, IDT_TR_STATUS, StatusCache);
+
+    // "Skip size scan" is offered only while the pre-scan runs
+    HWND hSkip = GetDlgItem(HWindow, IDB_SKIPSCAN);
+    if (hSkip != NULL && (IsWindowVisible(hSkip) != FALSE) != (snap.IsScanning != FALSE))
+        ShowWindow(hSkip, snap.IsScanning ? SW_SHOW : SW_HIDE);
 
     // 4. Progress bars (current file and whole batch)
     if (FileProgressBar != NULL)
@@ -1830,6 +1846,13 @@ INT_PTR CSftpTransferProgressDlg::DialogProc(UINT uMsg, WPARAM wParam, LPARAM lP
             if (CenterToWnd != NULL)
                 EnableWindow(CenterToWnd, TRUE);
             ShowWindow(HWindow, SW_HIDE);
+            return TRUE;
+        }
+        else if (cmdId == IDB_SKIPSCAN)
+        {
+            if (Worker != NULL)
+                Worker->SkipScan();
+            ShowWindow(GetDlgItem(HWindow, IDB_SKIPSCAN), SW_HIDE);
             return TRUE;
         }
         else if (cmdId == IDB_SHOWDETAILS)

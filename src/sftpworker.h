@@ -62,6 +62,7 @@ struct CSftpTransferState
 
     // Pre-scan of queued directories (total size is determined before the transfer starts)
     volatile bool IsScanning;
+    volatile bool SkipScanRequested; // user chose to skip the size pre-scan (the transfer itself continues)
     unsigned int ScannedFiles;
     unsigned __int64 ScannedBytes;
 
@@ -96,6 +97,7 @@ struct CSftpTransferState
         LastUpdateTick = 0;
         BytesPerSec = 0.0;
         IsScanning = false;
+        SkipScanRequested = false;
         ScannedFiles = 0;
         ScannedBytes = 0;
         IsRunning = false;
@@ -145,6 +147,8 @@ public:
     void EnqueueTask(const CSftpTransferTask& task);
     // Cancel ongoing and queued transfers
     void Cancel();
+    // Abort only the size pre-scan; the transfer continues with per-file accounting
+    void SkipScan();
 
     // Pause / Resume transfer
     void SetPaused(bool paused);
@@ -178,6 +182,7 @@ private:
     bool ScanLocalDir(const std::string& local, const std::string& remote, unsigned __int64& bytes);
     void ScanAddFile(unsigned __int64 size);
     bool IsCancelRequested();
+    bool IsScanAborted(); // cancel or skip-scan requested
     bool DoDownloadRecursive(const std::string& remote, const std::string& local, bool isDir, bool deleteSource = false);
     bool DoUploadRecursive(const std::string& local, const std::string& remote, bool isDir, bool deleteSource = false);
 

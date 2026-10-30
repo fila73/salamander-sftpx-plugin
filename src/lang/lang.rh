@@ -81,6 +81,7 @@
 #define IDT_TR_TOTAL_STATUS             629
 #define IDP_TR_TOTAL_PROGRESS           630
 #define IDB_BACKGROUND                  631
+#define IDB_SKIPSCAN                    8690
 #define IDP_PROGRESSBAR                 542
 #define IDC_CE_PB                       562
 #define IDC_LIST_HEADER                 2510
