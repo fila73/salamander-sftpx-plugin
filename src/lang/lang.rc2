@@ -86,7 +86,7 @@ STRINGTABLE
  IDS_OPERDLGCOACT_COPYING,   "Copying %s"
  IDS_OPERDLGCOACT_UPLOADING, "Uploading %s"
  IDS_OPERDLGCOACT_DOWNLOADING,"Downloading %s"
- IDS_OPERDLG_STATUSTEXT,     "Status: %s of %s, total transfer speed: %.2f MB/s"
+ IDS_OPERDLG_STATUSTEXT,     "%s of %s, total transfer speed: %.2f MB/s"
  IDS_OPERDLG_STATUSCONN,     "%s of %s (at %.2f MB/s), %d %%, time left: %s"
  IDS_OPERDLGOPERS_TITLE,     "Operations: (%d / %d)"
 }

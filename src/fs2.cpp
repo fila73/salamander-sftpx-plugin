@@ -1156,18 +1156,29 @@ void CSftpTransferProgressDlg::UpdateFromWorker()
     if (TotalExpectedBytes > 0)
     {
         TotalProgressCache = (DWORD)(TotalDoneBytes * 1000 / TotalExpectedBytes);
-        if (TotalProgressCache > 1000)
-            TotalProgressCache = 1000;
-    }
-    else if (FileTotalBytes > 0)
-    {
-        TotalProgressCache = (DWORD)(FileDoneBytes * 1000 / FileTotalBytes);
-        if (TotalProgressCache > 1000)
-            TotalProgressCache = 1000;
+        // Expected total may still grow (directory contents are discovered while recursing),
+        // so 100 % is shown only once the operation is really finished
+        if (TotalProgressCache > 1000 || (TotalProgressCache == 1000 && !OperationFinished))
+            TotalProgressCache = OperationFinished ? 1000 : 999;
     }
     else
     {
         TotalProgressCache = 0;
+    }
+
+    // Finished without error: skipped files leave done below expected, still show a full bar
+    if (OperationFinished && !snap.HasError && !snap.Cancelled)
+        TotalProgressCache = 1000;
+
+    if (FileTotalBytes > 0)
+    {
+        FileProgressCache = (DWORD)(FileDoneBytes * 1000 / FileTotalBytes);
+        if (FileProgressCache > 1000)
+            FileProgressCache = 1000;
+    }
+    else
+    {
+        FileProgressCache = 0;
     }
 
     // 1. Elapsed time
@@ -1225,7 +1236,8 @@ void CSftpTransferProgressDlg::UpdateFromWorker()
         errCount++;
 
     char doneStr[32], totalStr[32];
-    if (TotalExpectedBytes >= 1048576)
+    unsigned __int64 unitBase = TotalExpectedBytes > TotalDoneBytes ? TotalExpectedBytes : TotalDoneBytes;
+    if (unitBase >= 1048576)
     {
         _snprintf_s(doneStr, sizeof(doneStr), _TRUNCATE, "%.1f MB", (double)TotalDoneBytes / 1048576.0);
         _snprintf_s(totalStr, sizeof(totalStr), _TRUNCATE, "%.1f MB", (double)TotalExpectedBytes / 1048576.0);
@@ -1246,9 +1258,11 @@ void CSftpTransferProgressDlg::UpdateFromWorker()
     }
     SetDlgItemText(HWindow, IDT_TR_STATUS, StatusCache);
 
-    // 4. Progress bar
+    // 4. Progress bars (current file and whole batch)
     if (FileProgressBar != NULL)
-        FileProgressBar->SetProgress(TotalProgressCache, NULL);
+        FileProgressBar->SetProgress(FileProgressCache, NULL);
+    if (TotalProgressBar != NULL)
+        TotalProgressBar->SetProgress(TotalProgressCache, NULL);
 
     // 5. Title bar percentage update
     int pct = (int)(TotalProgressCache / 10);
@@ -1329,7 +1343,9 @@ void CSftpTransferProgressDlg::FlushDataToControls()
         if (ProgressCacheIsDirty)
         {
             if (FileProgressBar != NULL)
-                FileProgressBar->SetProgress(TotalProgressCache, NULL);
+                FileProgressBar->SetProgress(FileProgressCache, NULL);
+            if (TotalProgressBar != NULL)
+                TotalProgressBar->SetProgress(TotalProgressCache, NULL);
             ProgressCacheIsDirty = FALSE;
         }
     }
@@ -1367,8 +1383,8 @@ INT_PTR CSftpTransferProgressDlg::DialogProc(UINT uMsg, WPARAM wParam, LPARAM lP
         }
 
         FileProgressBar = SalamanderGUI->AttachProgressBar(HWindow, IDP_TR_FILE_PROGRESS);
-        TotalProgressBar = NULL;
-        if (FileProgressBar == NULL)
+        TotalProgressBar = SalamanderGUI->AttachProgressBar(HWindow, IDP_TR_TOTAL_PROGRESS);
+        if (FileProgressBar == NULL || TotalProgressBar == NULL)
         {
             DestroyWindow(HWindow);
             return FALSE;

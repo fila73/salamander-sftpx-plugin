@@ -245,6 +245,13 @@ void CSftpTransferWorker::EnqueueTask(const CSftpTransferTask& task)
     SetEvent(WakeEvent);
 }
 
+void CSftpTransferWorker::AddExpectedBytes(unsigned __int64 bytes)
+{
+    EnterCriticalSection(&State.Lock);
+    State.TotalBytesExpected += bytes;
+    LeaveCriticalSection(&State.Lock);
+}
+
 void CSftpTransferWorker::Cancel()
 {
     if (!Initialized)
@@ -651,6 +658,9 @@ bool CSftpTransferWorker::DoDownloadRecursive(const std::string& remote, const s
             return false; // never build a local path from a name that could escape or hit a device
         }
 
+        // Files found inside a queued directory were not known at EnqueueTask time
+        if (!entries[i].IsDir)
+            AddExpectedBytes(entries[i].Size);
         if (!DoDownloadRecursive(r, l, entries[i].IsDir, deleteSource))
             return false;
     }
@@ -804,6 +814,9 @@ bool CSftpTransferWorker::DoUploadRecursive(const std::string& local, const std:
         }
 
         bool subIsDir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        // Files found inside a queued directory were not known at EnqueueTask time
+        if (!subIsDir)
+            AddExpectedBytes(((unsigned __int64)fd.nFileSizeHigh << 32) | fd.nFileSizeLow);
         if (!DoUploadRecursive(l, r, subIsDir, deleteSource))
         {
             ok = false;
@@ -945,6 +958,9 @@ bool CSftpTransferWorker::ReportProgress(const char* name, unsigned __int64 done
 
     if (done >= prevDone)
         State.TotalBytesDone += (done - prevDone);
+    // A file that grew or a size reported as 0 must not push done beyond expected
+    if (State.TotalBytesDone > State.TotalBytesExpected)
+        State.TotalBytesExpected = State.TotalBytesDone;
 
     if (elapsed > 200 && State.TotalBytesDone > 0)
     {

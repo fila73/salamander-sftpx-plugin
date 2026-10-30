@@ -165,6 +165,7 @@ private:
     bool DoUploadRecursive(const std::string& local, const std::string& remote, bool isDir, bool deleteSource = false);
 
     static bool StaticProgressCallback(void* ctx, const char* name, unsigned __int64 done, unsigned __int64 total);
+    void AddExpectedBytes(unsigned __int64 bytes);
     bool ReportProgress(const char* name, unsigned __int64 done, unsigned __int64 total);
 
     HANDLE ThreadHandle;

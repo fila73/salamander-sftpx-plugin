@@ -83,7 +83,7 @@ STRINGTABLE
  IDS_OPERDLGCOACT_COPYING,   "Kopíruji %s"
  IDS_OPERDLGCOACT_UPLOADING, "Nahrávám %s"
  IDS_OPERDLGCOACT_DOWNLOADING,"Stahuji %s"
- IDS_OPERDLG_STATUSTEXT,     "Stav: %s z %s, celková rychlost přenosu: %.2f MB/s"
+ IDS_OPERDLG_STATUSTEXT,     "%s z %s, celková rychlost přenosu: %.2f MB/s"
  IDS_OPERDLG_STATUSCONN,     "%s z %s (za %.2f MB/s), %d %%, zbývající čas: %s"
  IDS_OPERDLGOPERS_TITLE,     "Operace: (%d / %d)"
 }
