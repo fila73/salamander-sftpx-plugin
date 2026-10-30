@@ -920,7 +920,7 @@ void CSftpTransferProgressDlg::LayoutDialog()
         hdwp = DeferWindowPos(hdwp, GetDlgItem(HWindow, IDCANCEL), NULL, curX, btnY, btnW, btnH, SWP_NOZORDER);
         curX -= (btnW + gap);
         HWND hSkipBtn = GetDlgItem(HWindow, IDB_SKIPSCAN);
-        if (hSkipBtn != NULL)
+        if (hSkipBtn != NULL && IsWindowVisible(hSkipBtn))
         {
             RECT rSkip;
             GetWindowRect(hSkipBtn, &rSkip);
@@ -1288,7 +1288,10 @@ void CSftpTransferProgressDlg::UpdateFromWorker()
     // "Skip size scan" is offered only while the pre-scan runs
     HWND hSkip = GetDlgItem(HWindow, IDB_SKIPSCAN);
     if (hSkip != NULL && (IsWindowVisible(hSkip) != FALSE) != (snap.IsScanning != FALSE))
+    {
         ShowWindow(hSkip, snap.IsScanning ? SW_SHOW : SW_HIDE);
+        LayoutDialog(); // no gap in the button row while the skip button is hidden
+    }
 
     // 4. Progress bars (current file and whole batch)
     if (FileProgressBar != NULL)
@@ -1853,6 +1856,7 @@ INT_PTR CSftpTransferProgressDlg::DialogProc(UINT uMsg, WPARAM wParam, LPARAM lP
             if (Worker != NULL)
                 Worker->SkipScan();
             ShowWindow(GetDlgItem(HWindow, IDB_SKIPSCAN), SW_HIDE);
+            LayoutDialog();
             return TRUE;
         }
         else if (cmdId == IDB_SHOWDETAILS)
