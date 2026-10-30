@@ -919,6 +919,17 @@ void CSftpTransferProgressDlg::LayoutDialog()
         curX -= (btnW + gap);
         hdwp = DeferWindowPos(hdwp, GetDlgItem(HWindow, IDCANCEL), NULL, curX, btnY, btnW, btnH, SWP_NOZORDER);
         curX -= (btnW + gap);
+        HWND hSkipBtn = GetDlgItem(HWindow, IDB_SKIPSCAN);
+        if (hSkipBtn != NULL && IsWindowVisible(hSkipBtn))
+        {
+            RECT rSkip;
+            GetWindowRect(hSkipBtn, &rSkip);
+            int skipW = rSkip.right - rSkip.left;
+            if (skipW <= 0) skipW = btnW;
+            curX -= (skipW - btnW); // the skip button is wider than the others
+            hdwp = DeferWindowPos(hdwp, hSkipBtn, NULL, curX, btnY, skipW, btnH, SWP_NOZORDER);
+            curX -= (btnW + gap);
+        }
         hdwp = DeferWindowPos(hdwp, GetDlgItem(HWindow, IDB_PAUSERESUME), NULL, curX, btnY, btnW, btnH, SWP_NOZORDER);
         curX -= (btnW + gap);
         hdwp = DeferWindowPos(hdwp, GetDlgItem(HWindow, IDB_SHOWERRORS), NULL, curX, btnY, btnW, btnH, SWP_NOZORDER);
@@ -1156,18 +1167,29 @@ void CSftpTransferProgressDlg::UpdateFromWorker()
     if (TotalExpectedBytes > 0)
     {
         TotalProgressCache = (DWORD)(TotalDoneBytes * 1000 / TotalExpectedBytes);
-        if (TotalProgressCache > 1000)
-            TotalProgressCache = 1000;
-    }
-    else if (FileTotalBytes > 0)
-    {
-        TotalProgressCache = (DWORD)(FileDoneBytes * 1000 / FileTotalBytes);
-        if (TotalProgressCache > 1000)
-            TotalProgressCache = 1000;
+        // Expected total may still grow (directory contents are discovered while recursing),
+        // so 100 % is shown only once the operation is really finished
+        if (TotalProgressCache > 1000 || (TotalProgressCache == 1000 && !OperationFinished))
+            TotalProgressCache = OperationFinished ? 1000 : 999;
     }
     else
     {
         TotalProgressCache = 0;
+    }
+
+    // Finished without error: skipped files leave done below expected, still show a full bar
+    if (OperationFinished && !snap.HasError && !snap.Cancelled)
+        TotalProgressCache = 1000;
+
+    if (FileTotalBytes > 0)
+    {
+        FileProgressCache = (DWORD)(FileDoneBytes * 1000 / FileTotalBytes);
+        if (FileProgressCache > 1000)
+            FileProgressCache = 1000;
+    }
+    else
+    {
+        FileProgressCache = 0;
     }
 
     // 1. Elapsed time
@@ -1186,7 +1208,11 @@ void CSftpTransferProgressDlg::UpdateFromWorker()
 
     // 2. Remaining time
     char remBuf[64];
-    if (snap.IsPaused)
+    if (snap.IsScanning)
+    {
+        lstrcpynA(remBuf, LoadStr(IDS_OPERDLG_SCANTIME), sizeof(remBuf));
+    }
+    else if (snap.IsPaused)
     {
         strcpy_s(remBuf, "(pozastaveno)");
     }
@@ -1225,7 +1251,8 @@ void CSftpTransferProgressDlg::UpdateFromWorker()
         errCount++;
 
     char doneStr[32], totalStr[32];
-    if (TotalExpectedBytes >= 1048576)
+    unsigned __int64 unitBase = TotalExpectedBytes > TotalDoneBytes ? TotalExpectedBytes : TotalDoneBytes;
+    if (unitBase >= 1048576)
     {
         _snprintf_s(doneStr, sizeof(doneStr), _TRUNCATE, "%.1f MB", (double)TotalDoneBytes / 1048576.0);
         _snprintf_s(totalStr, sizeof(totalStr), _TRUNCATE, "%.1f MB", (double)TotalExpectedBytes / 1048576.0);
@@ -1244,11 +1271,33 @@ void CSftpTransferProgressDlg::UpdateFromWorker()
         _snprintf_s(errSuffix, sizeof(errSuffix), _TRUNCATE, ", %u chyb", (unsigned)errCount);
         strcat_s(StatusCache, errSuffix);
     }
+    if (snap.IsScanning)
+    {
+        // Pre-scan of the queued directories: total size is not known yet, bars stay at 0
+        char scanSize[32];
+        if (snap.ScannedBytes >= 1048576)
+            _snprintf_s(scanSize, sizeof(scanSize), _TRUNCATE, "%.1f MB", (double)snap.ScannedBytes / 1048576.0);
+        else
+            _snprintf_s(scanSize, sizeof(scanSize), _TRUNCATE, "%I64u kB", snap.ScannedBytes / 1024);
+        _snprintf_s(StatusCache, sizeof(StatusCache), _TRUNCATE, LoadStr(IDS_OPERDLG_SCANNING), snap.ScannedFiles, scanSize);
+        TotalProgressCache = 0;
+        FileProgressCache = 0;
+    }
     SetDlgItemText(HWindow, IDT_TR_STATUS, StatusCache);
 
-    // 4. Progress bar
+    // "Skip size scan" is offered only while the pre-scan runs
+    HWND hSkip = GetDlgItem(HWindow, IDB_SKIPSCAN);
+    if (hSkip != NULL && (IsWindowVisible(hSkip) != FALSE) != (snap.IsScanning != FALSE))
+    {
+        ShowWindow(hSkip, snap.IsScanning ? SW_SHOW : SW_HIDE);
+        LayoutDialog(); // no gap in the button row while the skip button is hidden
+    }
+
+    // 4. Progress bars (current file and whole batch)
     if (FileProgressBar != NULL)
-        FileProgressBar->SetProgress(TotalProgressCache, NULL);
+        FileProgressBar->SetProgress(FileProgressCache, NULL);
+    if (TotalProgressBar != NULL)
+        TotalProgressBar->SetProgress(TotalProgressCache, NULL);
 
     // 5. Title bar percentage update
     int pct = (int)(TotalProgressCache / 10);
@@ -1329,7 +1378,9 @@ void CSftpTransferProgressDlg::FlushDataToControls()
         if (ProgressCacheIsDirty)
         {
             if (FileProgressBar != NULL)
-                FileProgressBar->SetProgress(TotalProgressCache, NULL);
+                FileProgressBar->SetProgress(FileProgressCache, NULL);
+            if (TotalProgressBar != NULL)
+                TotalProgressBar->SetProgress(TotalProgressCache, NULL);
             ProgressCacheIsDirty = FALSE;
         }
     }
@@ -1367,8 +1418,8 @@ INT_PTR CSftpTransferProgressDlg::DialogProc(UINT uMsg, WPARAM wParam, LPARAM lP
         }
 
         FileProgressBar = SalamanderGUI->AttachProgressBar(HWindow, IDP_TR_FILE_PROGRESS);
-        TotalProgressBar = NULL;
-        if (FileProgressBar == NULL)
+        TotalProgressBar = SalamanderGUI->AttachProgressBar(HWindow, IDP_TR_TOTAL_PROGRESS);
+        if (FileProgressBar == NULL || TotalProgressBar == NULL)
         {
             DestroyWindow(HWindow);
             return FALSE;
@@ -1798,6 +1849,14 @@ INT_PTR CSftpTransferProgressDlg::DialogProc(UINT uMsg, WPARAM wParam, LPARAM lP
             if (CenterToWnd != NULL)
                 EnableWindow(CenterToWnd, TRUE);
             ShowWindow(HWindow, SW_HIDE);
+            return TRUE;
+        }
+        else if (cmdId == IDB_SKIPSCAN)
+        {
+            if (Worker != NULL)
+                Worker->SkipScan();
+            ShowWindow(GetDlgItem(HWindow, IDB_SKIPSCAN), SW_HIDE);
+            LayoutDialog();
             return TRUE;
         }
         else if (cmdId == IDB_SHOWDETAILS)

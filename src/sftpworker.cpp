@@ -53,7 +53,7 @@ static void SftpSplitPathAndName(const char* fullPath, char separator, std::stri
 
 CSftpTransferWorker::CSftpTransferWorker()
     : ThreadHandle(NULL), ThreadId(0), WakeEvent(NULL), StopEvent(NULL), RunEvent(NULL),
-      DlgHwnd(NULL), CurrentTaskIndex(0), AttachedObserver(NULL), Initialized(true), OverwriteAllDecision(-1)
+      DlgHwnd(NULL), CurrentTaskIndex(0), CurrentTaskScanned(false), AttachedObserver(NULL), Initialized(true), OverwriteAllDecision(-1)
 {
     InitializeCriticalSection(&QueueLock);
     State.Init();
@@ -245,6 +245,13 @@ void CSftpTransferWorker::EnqueueTask(const CSftpTransferTask& task)
     SetEvent(WakeEvent);
 }
 
+void CSftpTransferWorker::AddExpectedBytes(unsigned __int64 bytes)
+{
+    EnterCriticalSection(&State.Lock);
+    State.TotalBytesExpected += bytes;
+    LeaveCriticalSection(&State.Lock);
+}
+
 void CSftpTransferWorker::Cancel()
 {
     if (!Initialized)
@@ -255,6 +262,15 @@ void CSftpTransferWorker::Cancel()
     if (RunEvent)
         SetEvent(RunEvent);
     SetEvent(WakeEvent);
+}
+
+void CSftpTransferWorker::SkipScan()
+{
+    if (!Initialized)
+        return;
+    EnterCriticalSection(&State.Lock);
+    State.SkipScanRequested = true;
+    LeaveCriticalSection(&State.Lock);
 }
 
 void CSftpTransferWorker::SetPaused(bool paused)
@@ -323,6 +339,9 @@ void CSftpTransferWorker::GetStateSnapshot(CSftpTransferState& outState)
     outState.StartTick = State.StartTick;
     outState.LastUpdateTick = State.LastUpdateTick;
     outState.BytesPerSec = State.BytesPerSec;
+    outState.IsScanning = State.IsScanning;
+    outState.ScannedFiles = State.ScannedFiles;
+    outState.ScannedBytes = State.ScannedBytes;
     outState.IsRunning = State.IsRunning;
     outState.IsPaused = State.IsPaused;
     outState.Cancelled = State.Cancelled;
@@ -433,6 +452,9 @@ void CSftpTransferWorker::ThreadLoop()
             continue;
         }
 
+        // Measure all pending directories before the first transfer (and any added later)
+        ScanPendingDirectories();
+
         EnterCriticalSection(&State.Lock);
         if (State.Cancelled)
         {
@@ -448,7 +470,10 @@ void CSftpTransferWorker::ThreadLoop()
         {
             taskIdx = CurrentTaskIndex++;
             AllTasks[taskIdx].Status = CSftpTransferTask::StatusRunning;
+            CurrentTaskScanned = AllTasks[taskIdx].ScanOk;
         }
+        else
+            CurrentTaskScanned = false;
         LeaveCriticalSection(&QueueLock);
 
         if (DlgHwnd)
@@ -651,6 +676,9 @@ bool CSftpTransferWorker::DoDownloadRecursive(const std::string& remote, const s
             return false; // never build a local path from a name that could escape or hit a device
         }
 
+        // Files found inside a queued directory were not known at EnqueueTask time
+        if (!entries[i].IsDir && !CurrentTaskScanned)
+            AddExpectedBytes(entries[i].Size);
         if (!DoDownloadRecursive(r, l, entries[i].IsDir, deleteSource))
             return false;
     }
@@ -804,6 +832,9 @@ bool CSftpTransferWorker::DoUploadRecursive(const std::string& local, const std:
         }
 
         bool subIsDir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        // Files found inside a queued directory were not known at EnqueueTask time
+        if (!subIsDir && !CurrentTaskScanned)
+            AddExpectedBytes(((unsigned __int64)fd.nFileSizeHigh << 32) | fd.nFileSizeLow);
         if (!DoUploadRecursive(l, r, subIsDir, deleteSource))
         {
             ok = false;
@@ -817,6 +848,200 @@ bool CSftpTransferWorker::DoUploadRecursive(const std::string& local, const std:
     if (ok && deleteSource)
         RemoveDirectoryA(local.c_str());
     return ok;
+}
+
+bool CSftpTransferWorker::IsCancelRequested()
+{
+    EnterCriticalSection(&State.Lock);
+    bool c = State.Cancelled;
+    LeaveCriticalSection(&State.Lock);
+    return c || WaitForSingleObject(StopEvent, 0) == WAIT_OBJECT_0;
+}
+
+bool CSftpTransferWorker::IsScanAborted()
+{
+    EnterCriticalSection(&State.Lock);
+    bool s = State.SkipScanRequested;
+    LeaveCriticalSection(&State.Lock);
+    return s || IsCancelRequested();
+}
+
+void CSftpTransferWorker::ScanAddFile(unsigned __int64 size)
+{
+    EnterCriticalSection(&State.Lock);
+    State.ScannedFiles++;
+    State.ScannedBytes += size;
+    LeaveCriticalSection(&State.Lock);
+}
+
+// Mirrors DoDownloadRecursive (same listing, same name validation, links are plain files); read-only.
+bool CSftpTransferWorker::ScanRemoteDir(const std::string& remote, const std::string& local, unsigned __int64& bytes)
+{
+    if (IsScanAborted())
+        return false;
+    std::vector<CSftpEntry> entries;
+    if (!WorkerConn.ListDir(remote.c_str(), entries))
+        return false;
+    for (size_t i = 0; i < entries.size(); i++)
+    {
+        if (IsScanAborted())
+            return false;
+        char r[MAX_PATH], l[MAX_PATH];
+        if (strlen(entries[i].Name.c_str()) != entries[i].Name.size() ||
+            !SftpJoinName(remote.c_str(), entries[i].Name.c_str(), r, MAX_PATH) ||
+            !LocalJoinName(local.c_str(), entries[i].Name.c_str(), l, MAX_PATH))
+            return false; // the transfer reports the unsafe name; the scan just gives up
+        if (entries[i].IsDir)
+        {
+            if (!ScanRemoteDir(r, l, bytes))
+                return false;
+        }
+        else
+        {
+            bytes += entries[i].Size;
+            ScanAddFile(entries[i].Size);
+        }
+    }
+    return true;
+}
+
+// Mirrors DoUploadRecursive (junctions/symlinked directories are not entered); read-only.
+bool CSftpTransferWorker::ScanLocalDir(const std::string& local, const std::string& remote, unsigned __int64& bytes)
+{
+    if (IsScanAborted())
+        return false;
+    if (IsLinkReparsePoint(local.c_str()))
+        return true; // skipped by the transfer, contributes nothing
+
+    char mask[MAX_PATH];
+    lstrcpynA(mask, local.c_str(), MAX_PATH);
+    PathAppendA(mask, "*");
+
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(mask, &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return false;
+
+    bool ok = true;
+    do
+    {
+        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0)
+            continue;
+        if (IsScanAborted())
+        {
+            ok = false;
+            break;
+        }
+        char l[MAX_PATH], r[MAX_PATH];
+        lstrcpynA(l, local.c_str(), MAX_PATH);
+        PathAppendA(l, fd.cFileName);
+        if (!SftpJoinName(remote.c_str(), fd.cFileName, r, MAX_PATH))
+        {
+            ok = false;
+            break;
+        }
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+        {
+            if (!ScanLocalDir(l, r, bytes))
+            {
+                ok = false;
+                break;
+            }
+        }
+        else
+        {
+            unsigned __int64 sz = ((unsigned __int64)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
+            bytes += sz;
+            ScanAddFile(sz);
+        }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    return ok;
+}
+
+void CSftpTransferWorker::ScanPendingDirectories()
+{
+    bool scanning = false;
+    for (;;)
+    {
+        size_t idx = (size_t)-1;
+        CSftpTransferTask t;
+        EnterCriticalSection(&QueueLock);
+        for (size_t i = CurrentTaskIndex; i < AllTasks.size(); i++)
+        {
+            if (AllTasks[i].IsDirectory && !AllTasks[i].Scanned && AllTasks[i].Status == CSftpTransferTask::StatusWaiting)
+            {
+                idx = i;
+                t = AllTasks[i];
+                break;
+            }
+        }
+        LeaveCriticalSection(&QueueLock);
+        if (idx == (size_t)-1 || IsCancelRequested())
+            break;
+
+        EnterCriticalSection(&State.Lock);
+        bool skip = State.SkipScanRequested;
+        LeaveCriticalSection(&State.Lock);
+        if (skip)
+        {
+            // Scan skipped by the user: this and every later directory task use per-file accounting
+            EnterCriticalSection(&QueueLock);
+            if (idx < AllTasks.size())
+            {
+                AllTasks[idx].Scanned = true;
+                AllTasks[idx].ScanOk = false;
+            }
+            LeaveCriticalSection(&QueueLock);
+            continue;
+        }
+
+        if (!scanning)
+        {
+            scanning = true;
+            EnterCriticalSection(&State.Lock);
+            State.IsScanning = true;
+            State.ScannedFiles = 0;
+            State.ScannedBytes = 0;
+            LeaveCriticalSection(&State.Lock);
+        }
+
+        unsigned __int64 bytes = 0;
+        bool ok = (t.TaskType == CSftpTransferTask::TaskDownload)
+                      ? ScanRemoteDir(t.RemotePath, t.LocalPath, bytes)
+                      : ScanLocalDir(t.LocalPath, t.RemotePath, bytes);
+        if (IsCancelRequested())
+            break; // like cancelling the transfer: nothing was touched
+        EnterCriticalSection(&State.Lock);
+        bool skipped = State.SkipScanRequested;
+        LeaveCriticalSection(&State.Lock);
+        if (skipped)
+            continue; // partial scan result is discarded; the skip branch above marks this task as unscanned
+
+        EnterCriticalSection(&QueueLock);
+        if (idx < AllTasks.size())
+        {
+            AllTasks[idx].Scanned = true; // failed scans are not repeated: per-file accounting is used
+            AllTasks[idx].ScanOk = ok;
+            if (ok)
+                AllTasks[idx].FileSize = bytes; // shown in the Operations list
+        }
+        if (ok)
+        {
+            EnterCriticalSection(&State.Lock);
+            State.TotalBytesExpected = State.TotalBytesExpected - (t.FileSize < State.TotalBytesExpected ? t.FileSize : State.TotalBytesExpected) + bytes;
+            LeaveCriticalSection(&State.Lock);
+        }
+        LeaveCriticalSection(&QueueLock);
+    }
+    if (scanning)
+    {
+        EnterCriticalSection(&State.Lock);
+        State.IsScanning = false;
+        LeaveCriticalSection(&State.Lock);
+        if (DlgHwnd)
+            PostMessage(DlgHwnd, WM_APP_SFTP_WORKER_UPDATE, 0, 0);
+    }
 }
 
 int CSftpTransferWorker::AskOverwriteWorker(const char* srcPath, const char* srcName,
@@ -945,6 +1170,9 @@ bool CSftpTransferWorker::ReportProgress(const char* name, unsigned __int64 done
 
     if (done >= prevDone)
         State.TotalBytesDone += (done - prevDone);
+    // A file that grew or a size reported as 0 must not push done beyond expected
+    if (State.TotalBytesDone > State.TotalBytesExpected)
+        State.TotalBytesExpected = State.TotalBytesDone;
 
     if (elapsed > 200 && State.TotalBytesDone > 0)
     {
